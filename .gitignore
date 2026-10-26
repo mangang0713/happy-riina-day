@@ -12,6 +12,8 @@ dist
 dist-ssr
 *.local
 supabase/.temp/
+.wrangler/
+workers/community-api/.dev.vars
 
 # Environment variables
 .env
