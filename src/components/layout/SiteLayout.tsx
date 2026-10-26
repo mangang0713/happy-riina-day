@@ -232,7 +232,7 @@ function SiteLayout() {
       <main className="site-main">
         <Outlet />
       </main>
-      <footer className="flex justify-center gap-[18px] border-t border-border bg-surface px-3 pt-2 pb-[max(8px,env(safe-area-inset-bottom,0px))]">
+      <footer className="flex flex-wrap justify-center gap-x-3 gap-y-0 border-t border-border bg-surface px-3 pt-2 pb-[max(8px,env(safe-area-inset-bottom,0px))]">
         <Link
           className="inline-flex min-h-9 items-center text-[11px] text-muted no-underline"
           to="/policy/privacy"
@@ -245,6 +245,18 @@ function SiteLayout() {
         >
           커뮤니티 운영 원칙
         </Link>
+        <span className="inline-flex min-h-9 items-center whitespace-nowrap text-[11px] text-muted">
+          기록·제작
+          <a
+            className="ml-1 font-medium text-brand-green no-underline transition-colors hover:text-text hover:underline focus-visible:outline-2 focus-visible:outline-brand-green focus-visible:outline-offset-2"
+            href="https://x.com/hessxl_"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="X에서 @hessxl_ 프로필 열기"
+          >
+            @hessxl_
+          </a>
+        </span>
       </footer>
     </div>
   );
