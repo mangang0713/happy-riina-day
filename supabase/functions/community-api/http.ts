@@ -2,6 +2,18 @@
  * 이 모듈은 Edge Function 전반에서 공유하는 HTTP 헤더와 입력 도구를 제공합니다.
  */
 
+/** 예상 가능한 API 오류를 HTTP 응답 상태·코드와 함께 전달합니다. */
+export class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'HttpError';
+  }
+}
+
 /** 응답 생성기가 사용할 CORS·JSON 응답 함수를 허용 origin 설정에 묶습니다. */
 export function createHttpHelpers(allowedOrigins: ReadonlySet<string>) {
   /** 브라우저가 허용된 로컬·배포 출처에서만 API 응답을 읽도록 CORS를 설정합니다. */

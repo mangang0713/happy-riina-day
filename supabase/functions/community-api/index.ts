@@ -19,7 +19,7 @@ import {
   removeStorageObjectsForContent,
   safeSecretEquals,
 } from './moderation.ts';
-import { createHttpHelpers, getBearer, text } from './http.ts';
+import { createHttpHelpers, getBearer, HttpError, text } from './http.ts';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
@@ -47,16 +47,46 @@ const admin =
 /** 로그인 토큰을 Supabase에서 검증하고 사용자용·서버용 클라이언트를 제공합니다. */
 async function requireUser(request: Request) {
   if (!supabaseUrl || !anonKey || !admin) {
-    throw new Error('Supabase 서버 설정이 완료되지 않았습니다.');
+    throw new HttpError(
+      503,
+      'SERVER_CONFIGURATION_MISSING',
+      'Supabase 서버 설정이 완료되지 않았습니다.',
+    );
   }
   const token = getBearer(request);
-  if (!token) throw new Error('로그인이 필요합니다.');
+  if (!token) {
+    throw new HttpError(401, 'UNAUTHORIZED', '로그인이 필요합니다.');
+  }
   const client = createClient(supabaseUrl, anonKey, {
     auth: { autoRefreshToken: false, persistSession: false },
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
-  const { data, error } = await client.auth.getUser(token);
-  if (error || !data.user) throw new Error('로그인 세션을 확인할 수 없습니다.');
+  let data: Awaited<ReturnType<typeof client.auth.getUser>>['data'];
+  let error: Awaited<ReturnType<typeof client.auth.getUser>>['error'];
+  try {
+    ({ data, error } = await client.auth.getUser(token));
+  } catch {
+    throw new HttpError(
+      503,
+      'AUTH_SERVICE_UNAVAILABLE',
+      '로그인 확인 서버에 연결하지 못했습니다.',
+    );
+  }
+  if (error || !data.user) {
+    const status = (error as { status?: number } | null)?.status;
+    if (error && (!status || status < 400 || status >= 500 || status === 429)) {
+      throw new HttpError(
+        503,
+        'AUTH_SERVICE_UNAVAILABLE',
+        '로그인 확인 서버에 연결하지 못했습니다.',
+      );
+    }
+    throw new HttpError(
+      401,
+      'INVALID_SESSION',
+      '로그인 세션을 확인할 수 없습니다.',
+    );
+  }
   return { user: data.user, client, admin };
 }
 
@@ -131,31 +161,79 @@ async function takeLimit(
     p_limit: limit,
     p_window_seconds: seconds,
   });
-  if (error) throw new Error('요청 횟수를 확인하지 못했습니다.');
+  if (error) {
+    throw new HttpError(
+      503,
+      'RATE_LIMIT_UNAVAILABLE',
+      '요청 횟수를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+    );
+  }
   if (!data) {
-    throw new Error('요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.');
+    throw new HttpError(
+      429,
+      'RATE_LIMIT_EXCEEDED',
+      '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.',
+    );
   }
 }
 
 /** 게시·신고 요청의 봇 확인 토큰을 Cloudflare에서 검증합니다. */
 async function verifyTurnstile(request: Request, token: unknown) {
-  if (!turnstileSecret) return;
+  if (!turnstileSecret) {
+    throw new HttpError(
+      503,
+      'BOT_CHECK_UNAVAILABLE',
+      '봇 확인 설정을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.',
+    );
+  }
   if (typeof token !== 'string' || token.length < 10) {
-    throw new Error('봇 확인을 완료해 주세요.');
+    throw new HttpError(400, 'BOT_CHECK_REQUIRED', '봇 확인을 완료해 주세요.');
   }
   const form = new FormData();
   form.set('secret', turnstileSecret);
   form.set('response', token);
   const ip = request.headers.get('CF-Connecting-IP');
   if (ip) form.set('remoteip', ip);
-  const response = await fetch(
-    'https://challenges.cloudflare.com/turnstile/v0/siteverify',
-    { method: 'POST', body: form },
-  );
-  const result = (await response.json()) as {
-    success?: boolean;
-    hostname?: string;
-  };
+  let response: Response;
+  try {
+    response = await fetch(
+      'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+      {
+        method: 'POST',
+        body: form,
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+  } catch {
+    throw new HttpError(
+      503,
+      'BOT_CHECK_UNAVAILABLE',
+      '봇 확인 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+    );
+  }
+  if (!response.ok) {
+    console.error('Turnstile Siteverify returned a non-success status', {
+      status: response.status,
+    });
+    throw new HttpError(
+      503,
+      'BOT_CHECK_UNAVAILABLE',
+      '봇 확인 서버가 응답하지 않습니다. 잠시 후 다시 시도해 주세요.',
+    );
+  }
+  let result: { success?: boolean; hostname?: string };
+  try {
+    result = (await response.json()) as {
+      success?: boolean;
+      hostname?: string;
+    };
+  } catch {
+    throw new HttpError(
+      503,
+      'BOT_CHECK_UNAVAILABLE',
+      '봇 확인 서버의 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+    );
+  }
   const allowedHosts = new Set(
     [...allowedOrigins].map((value) => new URL(value).hostname),
   );
@@ -164,7 +242,11 @@ async function verifyTurnstile(request: Request, token: unknown) {
     !result.hostname ||
     !allowedHosts.has(result.hostname)
   ) {
-    throw new Error('봇 확인에 실패했습니다. 다시 시도해 주세요.');
+    throw new HttpError(
+      403,
+      'BOT_CHECK_FAILED',
+      '봇 확인에 실패했습니다. 다시 시도해 주세요.',
+    );
   }
 }
 
@@ -937,6 +1019,13 @@ Deno.serve(async (request) => {
     }
     return respond({ error: '지원하지 않는 요청입니다.' }, 400, origin);
   } catch (error) {
+    if (error instanceof HttpError) {
+      return respond(
+        { code: error.code, error: error.message },
+        error.status,
+        origin,
+      );
+    }
     return respond(
       {
         error:

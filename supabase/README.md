@@ -23,6 +23,7 @@ Supabase 프로젝트의 커뮤니티 DB 마이그레이션과 `community-api` E
    `202610210004`를 적용하기 전에는 Edge Function Secrets의 `COMMUNITY_PURGE_SECRET`과 Database → Vault의 `community_purge_secret`에 동일한 무작위 비밀값을 등록합니다. 둘 중 하나라도 없으면 예약 작업은 실행되지 않습니다.
 
    기존 프로젝트는 일부 SQL을 Dashboard의 SQL Editor에서 직접 적용했으므로, CLI 이력이 실제 스키마와 다를 수 있습니다. Supabase CLI에 로그인한 뒤 연결된 프로젝트에 변경을 적용하기 전 `supabase migration list --linked`로 대조하고, 실제 테이블·함수·정책 적용 여부를 확인하세요. 이미 적용된 SQL을 다시 실행하거나 이력이 맞춰지기 전에 `supabase db push`를 하지 마세요. 기존 적용분은 DB 상태를 확인한 다음에만 migration history에 반영합니다.
+
 6. `community-api` Edge Function을 최신 코드로 배포합니다. `supabase/config.toml`에서 `verify_jwt = false`인 것은 일부 비로그인 작업과 별도 비밀값 인증을 함께 받기 때문입니다. 사용자 작업은 함수 안에서 Supabase Auth의 `getUser(token)`으로 토큰을 직접 검증한 뒤 수행하며, 관리자 작업은 서버 측 관리자 권한을 추가로 확인합니다. 이 설정을 로그인 검증이 꺼졌다는 뜻으로 해석하지 않습니다.
 7. 운영 메뉴는 X 로그인 계정 `hessxl_`에만 표시됩니다. 서버 측 관리자 확인은 X OAuth identity의 사용자명을 기준으로 하며, 화면 표시 이름을 바꾸는 것만으로 관리자 권한을 얻을 수 없습니다.
 8. 로그인, 작성·수정·삭제, 신고, 관리자 숨김·삭제, 이의제기 승인·기각, 사진 한도, 중단 스위치를 익명·일반 사용자·관리자로 각각 시험합니다. 개인정보 안내에는 X 문의 계정 `@hessxl_`와 2027년 12월 31일 이후 서비스 데이터 폐기 예정일을 반영했습니다. 공개 전에 실제 처리 흐름과 정책이 일치하는지 최종 검토합니다.
@@ -30,12 +31,14 @@ Supabase 프로젝트의 커뮤니티 DB 마이그레이션과 `community-api` E
 ## Edge Function 구조와 현재 점검
 
 - `functions/community-api/index.ts`는 요청 인증, 제한·약관·관리자 권한 확인과 방명록·후기·신고·이의제기·계정 요청 분기를 조율합니다. `verify_jwt = false`여도 일반 사용자 요청은 함수 내부에서 `auth.getUser(token)`으로 검증됩니다.
+- 현재 API는 하나의 POST 진입점에서 `action` 값으로 기능을 구분합니다. 방명록·후기는 `create-guestbook`·`edit-guestbook`·`create-review`·`edit-review`, 반응은 `toggle-like`, 미디어는 multipart `upload-image`와 `signed-media`·`delete-media`, 사용자 관리 기능은 `report-content`·`submit-appeal`·`delete-content`·`delete-account` 등으로 분기합니다. 관리자 전용 조회·운영은 `get-admin-*`·`update-admin-settings`·`moderate-report`·`resolve-appeal`이며, 예약 정리는 사용자 토큰 대신 `COMMUNITY_PURGE_SECRET`으로 인증합니다.
 - `functions/community-api/http.ts`는 CORS 헤더, JSON 응답, Bearer 토큰 읽기와 문자열 입력 검증을 제공합니다. CORS는 브라우저 응답을 제한하는 설정이며 API 인증을 대신하지 않습니다. `http_test.ts`는 이 공통 도구의 동작을 Deno로 검사합니다.
+- `deno check supabase/functions/community-api/index.ts`는 Edge Function의 정적 타입을 확인합니다. 루트 `deno.lock`은 Deno가 해석한 Supabase 원격 모듈 버전을 기록해 다음 검사에서 의존성 변경을 알아보기 쉽게 합니다.
 - `functions/community-api/media.ts`는 비공개 Storage 업로드, 파일 검증, 사용량 예약·정산, 제한 시간 URL과 사진 삭제를 처리합니다.
 - `functions/community-api/moderation.ts`는 숨김 콘텐츠, 이의제기 정보 연결, 만료 시 콘텐츠·파일 정리를 처리합니다.
 - SQL은 RLS로 직접 테이블 접근을 제한하고, 공개 조회와 일부 작업은 권한이 제한된 `SECURITY DEFINER` 함수로 제공합니다. `service_role` 키는 Edge Function 안에서만 사용해야 합니다.
-- 현재 확인된 개선 후보는 `index.ts`의 요청 분기가 여러 커뮤니티 기능을 한 파일에 모으고, 예외 응답이 기본적으로 HTTP 400으로 반환되는 점입니다. 첫 코드 정리로 공통 HTTP 도구를 `http.ts`에 분리하고 응답·CORS·입력 검증 테스트 4개를 추가했다. 이 변경은 DB 스키마를 수정하지 않으며, 2026-10-22에 `community-api` version 9로 배포했다. CLI 원격 마이그레이션 목록에는 `202610220001`만 기록되고 이전 8개 로컬 마이그레이션은 원격 기록에서 확인되지 않았다. 원격 DB 구조와 SQL Editor 실행 이력을 대조하기 전까지 이 차이를 `db push`나 migration repair로 정리하지 않는다. 다음 작업은 오류 응답을 유형화하고 액션별 인증·권한·DB 변경 경계를 검사한 뒤 요청 분기를 책임별 핸들러로 나누는 것입니다. 자체 백엔드 이전은 시작하지 않는다.
-- `verifyTurnstile`은 현재 `TURNSTILE_SECRET_KEY`가 없으면 검증을 건너뜁니다(fail-open). 운영 환경에 secret이 설정돼 있는지 확인하고, 누락 시 쓰기 요청을 차단하도록 바꿀지는 별도 보안 개선으로 시험해야 합니다.
+- 첫 보안 개선으로 Turnstile secret 누락을 fail-closed로 바꿨다. secret이 없거나 Siteverify 응답을 확인할 수 없으면 보호 대상 글 작성·수정을 통과시키지 않는다. 인증, 속도 제한, 봇 확인은 각각 HTTP 상태와 오류 코드를 반환한다. 나머지 기존 액션은 아직 예외를 HTTP 400으로 반환할 수 있어 다음 단계에서 액션별 계약을 더 세분화해야 한다. 이 코드는 로컬 변경이며 Edge Function에는 아직 배포하지 않았다.
+- 첫 코드 정리로 공통 HTTP 도구를 `http.ts`에 분리하고 응답·CORS·입력 검증 테스트 4개를 추가했다. 이 변경은 DB 스키마를 수정하지 않으며, 2026-10-22에 `community-api` version 9로 배포했다. CLI 원격 마이그레이션 목록에는 `202610220001`만 기록되고 이전 8개 로컬 마이그레이션은 원격 기록에서 확인되지 않았다. 원격 DB 구조와 SQL Editor 실행 이력을 대조하기 전까지 이 차이를 `db push`나 migration repair로 정리하지 않는다. 후속 작업은 액션별 인증·권한·DB 변경 경계를 검사하고 요청 분기를 책임별 핸들러로 나누는 것이다. 자체 백엔드 이전은 아직 시작하지 않는다.
 
 ## 한도와 운영
 
