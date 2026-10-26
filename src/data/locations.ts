@@ -703,15 +703,6 @@ export const locations: Location[] = [
     ]
   },
   {
-    "id": "venue-078",
-    "name": "김천종합운동장 일원",
-    "address": "경상북도 김천시 운동장길 1",
-    "coordinates": [
-      128.0868783,
-      36.1429564
-    ]
-  },
-  {
     "id": "venue-079",
     "name": "청송군 문화예술회관 대공연장",
     "address": "경상북도 청송군 청송읍 복지타운길 77",
@@ -736,6 +727,24 @@ export const locations: Location[] = [
     "coordinates": [
       128.9012628,
       37.7763744
+    ]
+  },
+  {
+    "id": "venue-082",
+    "name": "유원대학교 영동캠퍼스",
+    "address": "충청북도 영동군 영동읍 대학로 310",
+    "coordinates": [
+      127.799512,
+      36.195799
+    ]
+  },
+  {
+    "id": "venue-083",
+    "name": "신라대학교 제2운동장(마사토 운동장)",
+    "address": "부산광역시 사상구 백양대로700번길 140",
+    "coordinates": [
+      128.9970255,
+      35.16792
     ]
   }
 ]

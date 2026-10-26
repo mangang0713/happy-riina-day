@@ -1441,24 +1441,19 @@ export const schedules: Schedule[] = [
     ]
   },
   {
-    "id": "schedule-2026-10-15-01",
-    "locationId": "venue-078",
-    "eventFormat": "in-person",
-    "title": "2026 김천시민 체육대회",
-    "date": "2026-10-15",
-    "startTime": "09:00",
-    "setlistStatus": "unknown",
-    "setlist": []
-  },
-  {
     "id": "schedule-2026-10-16-01",
     "locationId": "venue-079",
     "eventFormat": "in-person",
     "title": "LEAGUE OF ART Season 3",
     "date": "2026-10-16",
     "startTime": "18:00",
-    "setlistStatus": "unknown",
-    "setlist": []
+    "setlistStatus": "known",
+    "setlist": [
+      "to-my-first-love",
+      "rose-between-buildings",
+      "it-was-summer",
+      "romantic-overdose"
+    ]
   },
   {
     "id": "schedule-2026-10-17-01",
@@ -1466,8 +1461,14 @@ export const schedules: Schedule[] = [
     "title": "2026 스포츠 가치데이 페스티벌",
     "date": "2026-10-17",
     "startTime": "17:00",
-    "setlistStatus": "unknown",
-    "setlist": []
+    "setlistStatus": "known",
+    "setlist": [
+      "to-my-first-love",
+      "rose-between-buildings",
+      "it-was-summer",
+      "good-for-u",
+      "world-is-not-like-a-movie"
+    ]
   },
   {
     "id": "schedule-2026-10-18-01",
@@ -1476,8 +1477,14 @@ export const schedules: Schedule[] = [
     "title": "2026 헬로 DDC 페스티벌",
     "date": "2026-10-18",
     "startTime": "14:00",
-    "setlistStatus": "unknown",
-    "setlist": []
+    "setlistStatus": "known",
+    "setlist": [
+      "to-my-first-love",
+      "rose-between-buildings",
+      "it-was-summer",
+      "good-for-u",
+      "world-is-not-like-a-movie"
+    ]
   },
   {
     "id": "schedule-2026-10-23-01",
@@ -1486,6 +1493,31 @@ export const schedules: Schedule[] = [
     "title": "2026 강릉 its 세계총회 개최기념 콘서트 K-뮤직콘서트",
     "date": "2026-10-23",
     "startTime": "18:00",
+    "setlistStatus": "known",
+    "setlist": [
+      "to-my-first-love",
+      "rose-between-buildings",
+      "romantic-overdose",
+      "it-was-summer"
+    ]
+  },
+  {
+    "id": "schedule-2026-10-27-01",
+    "locationId": "venue-082",
+    "eventFormat": "in-person",
+    "title": "2026 유원대학교 눈어치 한마당",
+    "date": "2026-10-27",
+    "startTime": "18:30",
+    "setlistStatus": "unknown",
+    "setlist": []
+  },
+  {
+    "id": "schedule-2026-10-28-01",
+    "locationId": "venue-083",
+    "eventFormat": "in-person",
+    "title": "2026 신라대학교 대동제",
+    "date": "2026-10-28",
+    "startTime": "20:00",
     "setlistStatus": "unknown",
     "setlist": []
   }
