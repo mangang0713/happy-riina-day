@@ -1508,8 +1508,14 @@ export const schedules: Schedule[] = [
     "title": "2026 유원대학교 눈어치 한마당",
     "date": "2026-10-27",
     "startTime": "18:30",
-    "setlistStatus": "unknown",
-    "setlist": []
+    "setlistStatus": "known",
+    "setlist": [
+      "to-my-first-love",
+      "rose-between-buildings",
+      "lets-get-hot",
+      "it-was-summer",
+      "romantic-overdose"
+    ]
   },
   {
     "id": "schedule-2026-10-28-01",
@@ -1518,8 +1524,14 @@ export const schedules: Schedule[] = [
     "title": "2026 신라대학교 대동제",
     "date": "2026-10-28",
     "startTime": "20:00",
-    "setlistStatus": "unknown",
-    "setlist": []
+    "setlistStatus": "known",
+    "setlist": [
+      "to-my-first-love",
+      "rose-between-buildings",
+      "it-was-summer",
+      "good-for-u",
+      "world-is-not-like-a-movie"
+    ]
   }
 ]
 

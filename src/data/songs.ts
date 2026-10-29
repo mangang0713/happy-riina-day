@@ -10,7 +10,7 @@ export const songs: Song[] = [
   { id: 'to-my-first-love', title: '나의 첫사랑에게' },
   { id: 'lets-get-hot', title: '뜨거워지자' },
   { id: 'it-was-summer', title: '여름이었다' },
-  { id: 'romantic-overdose', title: '낭만한도초과' },
+  { id: 'romantic-overdose', title: '낭만 한도 초과' },
   { id: 'world-is-not-like-a-movie', title: '세상은 영화같지 않더라' },
   { id: 'low-key-scared-but-h1-key-ready', title: 'Low-key Scared But H1-KEY Ready' },
   { id: 'good-for-u', title: 'Good For U' },
