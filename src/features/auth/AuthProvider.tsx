@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
+import { useNavigate } from 'react-router-dom';
 
 const supabaseConfigured = Boolean(
   import.meta.env.VITE_SUPABASE_URL?.trim() &&
@@ -36,6 +37,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 /** 앱 전체에서 Supabase 세션을 한 번 구독해 페이지에 공유합니다. */
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(supabaseConfigured);
 
@@ -116,9 +118,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const returnTo = sessionStorage.getItem('auth-return-to');
     if (returnTo) {
       sessionStorage.removeItem('auth-return-to');
-      window.location.hash = returnTo.startsWith('/') ? returnTo : '/';
+      // OAuth 콜백 뒤에는 현재 BrowserRouter의 경로로 복귀합니다.
+      const destination =
+        returnTo.startsWith('/') &&
+        !returnTo.startsWith('//') &&
+        !returnTo.includes('\\')
+          ? returnTo
+          : '/';
+      navigate(destination, { replace: true });
     }
-  }, [user]);
+  }, [user, navigate]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
