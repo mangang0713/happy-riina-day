@@ -7,10 +7,10 @@ import {
   type SupabaseClient,
 } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
+  allowMediaRequest,
   deleteCommunityContent,
   deleteCommunityMedia,
   signedMedia,
-  allowMediaRequest,
   uploadImage,
 } from './media.ts';
 import {
@@ -20,6 +20,7 @@ import {
   safeSecretEquals,
 } from './moderation.ts';
 import { createHttpHelpers, getBearer, HttpError, text } from './http.ts';
+import { verifyTurnstile } from './turnstile.ts';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
@@ -35,7 +36,8 @@ const allowedOrigins = new Set(
     .map((value) => value.trim())
     .filter(Boolean),
 );
-const { corsHeaders, respond } = createHttpHelpers(allowedOrigins);
+const { corsHeaders, respond, respondError } =
+  createHttpHelpers(allowedOrigins);
 
 const admin =
   supabaseUrl && serviceRoleKey
@@ -99,14 +101,24 @@ async function settings(client: SupabaseClient) {
     )
     .eq('id', true)
     .single();
-  if (error || !data) throw new Error('커뮤니티 설정을 확인하지 못했습니다.');
+  if (error || !data) {
+    throw new HttpError(
+      500,
+      'OPERATION_FAILED',
+      '커뮤니티 설정을 확인하지 못했습니다.',
+    );
+  }
   return data;
 }
 
 /** 관리자 여부를 확인한 뒤 원격 중단 스위치와 서비스 사용량을 반환합니다. */
 async function adminSettings(client: SupabaseClient, userId: string) {
   if (!(await isAdmin(client, userId))) {
-    throw new Error('관리자만 운영 설정을 볼 수 있습니다.');
+    throw new HttpError(
+      403,
+      'ADMIN_REQUIRED',
+      '관리자만 운영 설정을 볼 수 있습니다.',
+    );
   }
   const { data, error } = await client
     .from('community_settings')
@@ -115,7 +127,13 @@ async function adminSettings(client: SupabaseClient, userId: string) {
     )
     .eq('id', true)
     .single();
-  if (error || !data) throw new Error('운영 설정을 불러오지 못했습니다.');
+  if (error || !data) {
+    throw new HttpError(
+      500,
+      'OPERATION_FAILED',
+      '운영 설정을 불러오지 못했습니다.',
+    );
+  }
   const { data: databaseBytes } = await client.rpc('get_database_size_bytes');
   return {
     ...data,
@@ -131,16 +149,26 @@ async function adminSettings(client: SupabaseClient, userId: string) {
 async function assertCommunityEnabled(client: SupabaseClient) {
   const current = await settings(client);
   if (!current.community_enabled) {
-    throw new Error(
+    throw new HttpError(
+      503,
+      'COMMUNITY_PAUSED',
       '사용자 기능을 잠시 중단했습니다. 지도와 일정 기록은 계속 볼 수 있습니다.',
     );
   }
   const { data: databaseBytes, error } = await client.rpc(
     'get_database_size_bytes',
   );
-  if (error) throw new Error('데이터베이스 사용량을 확인하지 못했습니다.');
+  if (error) {
+    throw new HttpError(
+      503,
+      'USAGE_CHECK_UNAVAILABLE',
+      '데이터베이스 사용량을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+    );
+  }
   if (Number(databaseBytes) >= 400 * 1024 * 1024) {
-    throw new Error(
+    throw new HttpError(
+      503,
+      'USAGE_LIMIT_REACHED',
       '데이터베이스 사용량이 안전 한도에 도달해 사용자 기능 쓰기를 잠시 중단했습니다.',
     );
   }
@@ -177,79 +205,6 @@ async function takeLimit(
   }
 }
 
-/** 게시·신고 요청의 봇 확인 토큰을 Cloudflare에서 검증합니다. */
-async function verifyTurnstile(request: Request, token: unknown) {
-  if (!turnstileSecret) {
-    throw new HttpError(
-      503,
-      'BOT_CHECK_UNAVAILABLE',
-      '봇 확인 설정을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.',
-    );
-  }
-  if (typeof token !== 'string' || token.length < 10) {
-    throw new HttpError(400, 'BOT_CHECK_REQUIRED', '봇 확인을 완료해 주세요.');
-  }
-  const form = new FormData();
-  form.set('secret', turnstileSecret);
-  form.set('response', token);
-  const ip = request.headers.get('CF-Connecting-IP');
-  if (ip) form.set('remoteip', ip);
-  let response: Response;
-  try {
-    response = await fetch(
-      'https://challenges.cloudflare.com/turnstile/v0/siteverify',
-      {
-        method: 'POST',
-        body: form,
-        signal: AbortSignal.timeout(10_000),
-      },
-    );
-  } catch {
-    throw new HttpError(
-      503,
-      'BOT_CHECK_UNAVAILABLE',
-      '봇 확인 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.',
-    );
-  }
-  if (!response.ok) {
-    console.error('Turnstile Siteverify returned a non-success status', {
-      status: response.status,
-    });
-    throw new HttpError(
-      503,
-      'BOT_CHECK_UNAVAILABLE',
-      '봇 확인 서버가 응답하지 않습니다. 잠시 후 다시 시도해 주세요.',
-    );
-  }
-  let result: { success?: boolean; hostname?: string };
-  try {
-    result = (await response.json()) as {
-      success?: boolean;
-      hostname?: string;
-    };
-  } catch {
-    throw new HttpError(
-      503,
-      'BOT_CHECK_UNAVAILABLE',
-      '봇 확인 서버의 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.',
-    );
-  }
-  const allowedHosts = new Set(
-    [...allowedOrigins].map((value) => new URL(value).hostname),
-  );
-  if (
-    !result.success ||
-    !result.hostname ||
-    !allowedHosts.has(result.hostname)
-  ) {
-    throw new HttpError(
-      403,
-      'BOT_CHECK_FAILED',
-      '봇 확인에 실패했습니다. 다시 시도해 주세요.',
-    );
-  }
-}
-
 /** 공개 커뮤니티 글에서 사용할 최신 프로필 표시 이름을 조회합니다. */
 async function profileName(client: SupabaseClient, userId: string) {
   const { data, error } = await client
@@ -257,7 +212,13 @@ async function profileName(client: SupabaseClient, userId: string) {
     .select('display_name')
     .eq('id', userId)
     .single();
-  if (error || !data) throw new Error('공개 표시 이름을 불러오지 못했습니다.');
+  if (error || !data) {
+    throw new HttpError(
+      500,
+      'OPERATION_FAILED',
+      '공개 표시 이름을 불러오지 못했습니다.',
+    );
+  }
   return String(data.display_name);
 }
 
@@ -270,7 +231,13 @@ async function acceptCommunityTerms(client: SupabaseClient, userId: string) {
       community_terms_version: communityTermsVersion,
     })
     .eq('id', userId);
-  if (error) throw new Error('공개 안내 동의를 저장하지 못했습니다.');
+  if (error) {
+    throw new HttpError(
+      500,
+      'OPERATION_FAILED',
+      '공개 안내 동의를 저장하지 못했습니다.',
+    );
+  }
 }
 
 /** 글 작성·사진 업로드 전에 최신 공개 안내 동의가 있는지 확인합니다. */
@@ -281,7 +248,11 @@ async function requireCommunityTerms(client: SupabaseClient, userId: string) {
     .eq('id', userId)
     .single();
   if (error || data?.community_terms_version !== communityTermsVersion) {
-    throw new Error('게시물과 사진 공개 안내를 확인하고 동의해 주세요.');
+    throw new HttpError(
+      400,
+      'INVALID_INPUT',
+      '게시물과 사진 공개 안내를 확인하고 동의해 주세요.',
+    );
   }
 }
 
@@ -290,7 +261,13 @@ async function isAdmin(client: SupabaseClient, userId: string) {
   const { data, error } = await client.rpc('is_archive_admin_user', {
     p_user_id: userId,
   });
-  if (error) throw new Error('관리자 권한을 확인하지 못했습니다.');
+  if (error) {
+    throw new HttpError(
+      500,
+      'OPERATION_FAILED',
+      '관리자 권한을 확인하지 못했습니다.',
+    );
+  }
   return data === true;
 }
 
@@ -301,14 +278,26 @@ Deno.serve(async (request) => {
     return new Response('ok', { headers: corsHeaders(origin) });
   }
   if (request.method !== 'POST') {
-    return respond({ error: 'POST 요청만 허용됩니다.' }, 405, origin);
+    return respond(
+      { code: 'METHOD_NOT_ALLOWED', error: 'POST 요청만 허용됩니다.' },
+      405,
+      origin,
+    );
   }
   if (origin && !allowedOrigins.has(origin)) {
-    return respond({ error: '허용되지 않은 도메인입니다.' }, 403, origin);
+    return respond(
+      { code: 'ORIGIN_NOT_ALLOWED', error: '허용되지 않은 도메인입니다.' },
+      403,
+      origin,
+    );
   }
   try {
     if (!admin) {
-      throw new Error('Supabase Edge Function 비밀 설정을 확인해 주세요.');
+      throw new HttpError(
+        503,
+        'SERVER_CONFIGURATION_MISSING',
+        'Supabase Edge Function 비밀 설정을 확인해 주세요.',
+      );
     }
     const contentType = request.headers.get('content-type') ?? '';
     const contentLength = Number(request.headers.get('content-length') ?? 0);
@@ -318,6 +307,7 @@ Deno.serve(async (request) => {
     ) {
       return respond(
         {
+          code: 'PAYLOAD_TOO_LARGE',
           error: '업로드 요청이 너무 큽니다. 사진을 줄여서 다시 시도해 주세요.',
         },
         413,
@@ -327,16 +317,37 @@ Deno.serve(async (request) => {
     const form = contentType.includes('multipart/form-data')
       ? await request.formData()
       : null;
-    const rawBody = form
-      ? Object.fromEntries(
-          [...form.entries()].filter(([, value]) => typeof value === 'string'),
-        )
-      : await request.json();
+    let rawBody: Record<string, unknown>;
+    try {
+      rawBody = form
+        ? Object.fromEntries(
+            [...form.entries()].filter(
+              ([, value]) => typeof value === 'string',
+            ),
+          )
+        : await request.json();
+    } catch {
+      throw new HttpError(
+        400,
+        'INVALID_REQUEST_BODY',
+        '요청 데이터 형식이 올바르지 않습니다.',
+      );
+    }
+    if (!rawBody || typeof rawBody !== 'object' || Array.isArray(rawBody)) {
+      throw new HttpError(
+        400,
+        'INVALID_REQUEST_BODY',
+        '요청 데이터 형식이 올바르지 않습니다.',
+      );
+    }
     const action = form?.get('action') ?? rawBody.action;
     if (action === 'signed-media') {
       if (!(await allowMediaRequest(request, admin))) {
         return respond(
-          { error: '사진 요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.' },
+          {
+            code: 'RATE_LIMIT_EXCEEDED',
+            error: '사진 요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.',
+          },
           429,
           origin,
         );
@@ -353,13 +364,27 @@ Deno.serve(async (request) => {
         request.headers.get('x-community-purge-secret') ?? '';
       if (!safeSecretEquals(receivedSecret, expectedSecret)) {
         return respond(
-          { error: '예약 정리 요청을 인증하지 못했습니다.' },
+          {
+            code: 'PURGE_UNAUTHORIZED',
+            error: '예약 정리 요청을 인증하지 못했습니다.',
+          },
           403,
           origin,
         );
       }
       const result = await purgeExpiredCommunityContent(admin);
-      return respond(result, result.failed ? 500 : 200, origin);
+      if (result.failed) {
+        return respond(
+          {
+            ...result,
+            code: 'PURGE_PARTIAL_FAILURE',
+            error: '일부 만료 게시물을 정리하지 못했습니다.',
+          },
+          500,
+          origin,
+        );
+      }
+      return respond(result, 200, origin);
     }
     const { user } = await requireUser(request);
     if (action === 'accept-community-terms') {
@@ -372,7 +397,7 @@ Deno.serve(async (request) => {
     }
     if (form && action === 'upload-image') {
       return respond(
-        await uploadImage(request, user.id, admin, form, {
+        await uploadImage(user.id, admin, form, {
           assertCommunityEnabled,
           requireCommunityTerms,
           takeLimit,
@@ -389,7 +414,11 @@ Deno.serve(async (request) => {
     }
     if (action === 'get-admin-reports') {
       if (!(await isAdmin(adminClient, userId))) {
-        throw new Error('관리자만 신고 목록을 볼 수 있습니다.');
+        throw new HttpError(
+          403,
+          'ADMIN_REQUIRED',
+          '관리자만 신고 목록을 볼 수 있습니다.',
+        );
       }
       const { data, error } = await adminClient
         .from('content_reports')
@@ -399,7 +428,13 @@ Deno.serve(async (request) => {
         .eq('status', 'open')
         .order('created_at', { ascending: true })
         .limit(100);
-      if (error) throw new Error('신고 목록을 불러오지 못했습니다.');
+      if (error) {
+        throw new HttpError(
+          500,
+          'OPERATION_FAILED',
+          '신고 목록을 불러오지 못했습니다.',
+        );
+      }
       return respond(data ?? [], 200, origin);
     }
     if (action === 'get-admin-hidden-content') {
@@ -411,7 +446,11 @@ Deno.serve(async (request) => {
         3600,
       );
       if (!(await isAdmin(adminClient, userId))) {
-        throw new Error('관리자만 숨김 게시물을 볼 수 있습니다.');
+        throw new HttpError(
+          403,
+          'ADMIN_REQUIRED',
+          '관리자만 숨김 게시물을 볼 수 있습니다.',
+        );
       }
       const [guestbookResult, reviewResult] = await Promise.all([
         adminClient
@@ -432,7 +471,11 @@ Deno.serve(async (request) => {
           .limit(100),
       ]);
       if (guestbookResult.error || reviewResult.error) {
-        throw new Error('숨김 게시물을 불러오지 못했습니다.');
+        throw new HttpError(
+          500,
+          'OPERATION_FAILED',
+          '숨김 게시물을 불러오지 못했습니다.',
+        );
       }
       const hidden = [
         ...(guestbookResult.data ?? []).map((item) => ({
@@ -493,7 +536,11 @@ Deno.serve(async (request) => {
         reviewResult.error ||
         appealResultsResult.error
       ) {
-        throw new Error('내 게시글을 불러오지 못했습니다.');
+        throw new HttpError(
+          500,
+          'OPERATION_FAILED',
+          '내 게시글을 불러오지 못했습니다.',
+        );
       }
       const ownContent = [
         ...(guestbookResult.data ?? []).map((item) => ({
@@ -520,11 +567,19 @@ Deno.serve(async (request) => {
     }
     if (action === 'restore-hidden-content') {
       if (!(await isAdmin(adminClient, userId))) {
-        throw new Error('관리자만 숨김 게시물을 복원할 수 있습니다.');
+        throw new HttpError(
+          403,
+          'ADMIN_REQUIRED',
+          '관리자만 숨김 게시물을 복원할 수 있습니다.',
+        );
       }
       const contentType = rawBody.contentType;
       if (contentType !== 'guestbook' && contentType !== 'review') {
-        throw new Error('복원할 게시물 종류가 올바르지 않습니다.');
+        throw new HttpError(
+          400,
+          'INVALID_INPUT',
+          '복원할 게시물 종류가 올바르지 않습니다.',
+        );
       }
       const table =
         contentType === 'guestbook' ? 'guestbook_posts' : 'schedule_reviews';
@@ -542,9 +597,18 @@ Deno.serve(async (request) => {
         .eq('status', 'hidden')
         .select('id')
         .maybeSingle();
-      if (error || !data) {
-        throw new Error(
+      if (error) {
+        throw new HttpError(
+          500,
+          'CONTENT_RESTORE_FAILED',
           '숨김 게시물을 복원하지 못했습니다. 다시 목록을 불러와 확인해 주세요.',
+        );
+      }
+      if (!data) {
+        throw new HttpError(
+          409,
+          'CONTENT_STATE_CONFLICT',
+          '숨김 게시물을 복원할 수 없습니다. 목록을 새로고침해 주세요.',
         );
       }
       await adminClient
@@ -561,7 +625,11 @@ Deno.serve(async (request) => {
     }
     if (action === 'update-admin-settings') {
       if (!(await isAdmin(adminClient, userId))) {
-        throw new Error('관리자만 운영 설정을 바꿀 수 있습니다.');
+        throw new HttpError(
+          403,
+          'ADMIN_REQUIRED',
+          '관리자만 운영 설정을 바꿀 수 있습니다.',
+        );
       }
       const next = rawBody.settings;
       if (
@@ -576,13 +644,23 @@ Deno.serve(async (request) => {
         ) ||
         Object.values(next).some((value) => typeof value !== 'boolean')
       ) {
-        throw new Error('운영 설정 형식이 올바르지 않습니다.');
+        throw new HttpError(
+          400,
+          'INVALID_INPUT',
+          '운영 설정 형식이 올바르지 않습니다.',
+        );
       }
       const { error } = await adminClient
         .from('community_settings')
         .update({ ...next, updated_at: new Date().toISOString() })
         .eq('id', true);
-      if (error) throw new Error('운영 설정을 저장하지 못했습니다.');
+      if (error) {
+        throw new HttpError(
+          500,
+          'OPERATION_FAILED',
+          '운영 설정을 저장하지 못했습니다.',
+        );
+      }
       return respond({ saved: true }, 200, origin);
     }
 
@@ -593,7 +671,10 @@ Deno.serve(async (request) => {
       'edit-review',
     ]);
     if (captchaActions.has(String(action))) {
-      await verifyTurnstile(request, rawBody.turnstileToken);
+      await verifyTurnstile(request, rawBody.turnstileToken, {
+        secret: turnstileSecret,
+        allowedOrigins,
+      });
     }
     if (
       ![
@@ -625,7 +706,13 @@ Deno.serve(async (request) => {
         .insert({ user_id: userId, author_name: author, body })
         .select('id')
         .single();
-      if (error) throw new Error('방명록 글을 저장하지 못했습니다.');
+      if (error) {
+        throw new HttpError(
+          500,
+          'OPERATION_FAILED',
+          '방명록 글을 저장하지 못했습니다.',
+        );
+      }
       return respond({ id: data.id }, 200, origin);
     }
     if (action === 'edit-guestbook') {
@@ -643,7 +730,11 @@ Deno.serve(async (request) => {
         .select('id')
         .maybeSingle();
       if (error || !data) {
-        throw new Error('본인의 공개 상태 게시물만 수정할 수 있습니다.');
+        throw new HttpError(
+          403,
+          'FORBIDDEN',
+          '본인의 공개 상태 게시물만 수정할 수 있습니다.',
+        );
       }
       return respond({ id: rawBody.postId }, 200, origin);
     }
@@ -654,7 +745,11 @@ Deno.serve(async (request) => {
       const body = text(rawBody.body, 1200);
       const rating = Number(rawBody.rating);
       if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
-        throw new Error('별점은 1~5점으로 선택해 주세요.');
+        throw new HttpError(
+          400,
+          'INVALID_INPUT',
+          '별점은 1~5점으로 선택해 주세요.',
+        );
       }
       const author = await profileName(adminClient, userId);
       if (action === 'edit-review') {
@@ -667,7 +762,11 @@ Deno.serve(async (request) => {
           .select('id')
           .maybeSingle();
         if (error || !data) {
-          throw new Error('본인의 공개 상태 후기만 수정할 수 있습니다.');
+          throw new HttpError(
+            403,
+            'FORBIDDEN',
+            '본인의 공개 상태 후기만 수정할 수 있습니다.',
+          );
         }
         return respond({ id: rawBody.reviewId }, 200, origin);
       }
@@ -683,8 +782,17 @@ Deno.serve(async (request) => {
         .select('id')
         .single();
       if (error) {
-        throw new Error(
-          '일정당 후기 하나만 작성할 수 있습니다. 기존 후기를 수정해 주세요.',
+        if (error.code === '23505') {
+          throw new HttpError(
+            409,
+            'REVIEW_ALREADY_EXISTS',
+            '일정당 후기 하나만 작성할 수 있습니다. 기존 후기를 수정해 주세요.',
+          );
+        }
+        throw new HttpError(
+          500,
+          'REVIEW_SAVE_FAILED',
+          '후기를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.',
         );
       }
       return respond({ id: data.id }, 200, origin);
@@ -703,20 +811,36 @@ Deno.serve(async (request) => {
           .from('schedule_likes')
           .delete()
           .eq('id', existing.id);
-        if (error) throw new Error('좋아요를 취소하지 못했습니다.');
+        if (error) {
+          throw new HttpError(
+            500,
+            'OPERATION_FAILED',
+            '좋아요를 취소하지 못했습니다.',
+          );
+        }
         return respond({ liked: false }, 200, origin);
       }
       const { error } = await adminClient
         .from('schedule_likes')
         .insert({ schedule_id: scheduleId, user_id: userId });
-      if (error) throw new Error('좋아요를 저장하지 못했습니다.');
+      if (error) {
+        throw new HttpError(
+          500,
+          'OPERATION_FAILED',
+          '좋아요를 저장하지 못했습니다.',
+        );
+      }
       return respond({ liked: true }, 200, origin);
     }
     if (action === 'delete-content') {
       await takeLimit(adminClient, userId, 'delete-content', 10, 3600);
       const contentType = rawBody.contentType;
       if (contentType !== 'guestbook' && contentType !== 'review') {
-        throw new Error('삭제할 게시물 종류가 올바르지 않습니다.');
+        throw new HttpError(
+          400,
+          'INVALID_INPUT',
+          '삭제할 게시물 종류가 올바르지 않습니다.',
+        );
       }
       await deleteCommunityContent(
         adminClient,
@@ -729,11 +853,19 @@ Deno.serve(async (request) => {
     if (action === 'hide-content') {
       await takeLimit(adminClient, userId, 'hide-content', 20, 3600);
       if (!(await isAdmin(adminClient, userId))) {
-        throw new Error('관리자만 게시물을 숨길 수 있습니다.');
+        throw new HttpError(
+          403,
+          'ADMIN_REQUIRED',
+          '관리자만 게시물을 숨길 수 있습니다.',
+        );
       }
       const contentType = rawBody.contentType;
       if (contentType !== 'guestbook' && contentType !== 'review') {
-        throw new Error('숨길 게시물 종류가 올바르지 않습니다.');
+        throw new HttpError(
+          400,
+          'INVALID_INPUT',
+          '숨길 게시물 종류가 올바르지 않습니다.',
+        );
       }
       const table =
         contentType === 'guestbook' ? 'guestbook_posts' : 'schedule_reviews';
@@ -755,9 +887,18 @@ Deno.serve(async (request) => {
         .eq('status', 'published')
         .select('id')
         .maybeSingle();
-      if (error || !data) {
-        throw new Error(
-          '공개 게시물을 숨기지 못했습니다. 이미 숨겨졌거나 삭제된 글인지 확인해 주세요.',
+      if (error) {
+        throw new HttpError(
+          500,
+          'CONTENT_HIDE_FAILED',
+          '공개 게시물을 숨기지 못했습니다. 잠시 후 다시 시도해 주세요.',
+        );
+      }
+      if (!data) {
+        throw new HttpError(
+          409,
+          'CONTENT_STATE_CONFLICT',
+          '게시물이 이미 숨겨졌거나 삭제되었습니다. 목록을 새로고침해 주세요.',
         );
       }
       const { error: reportCleanupError } = await adminClient
@@ -767,7 +908,9 @@ Deno.serve(async (request) => {
         .eq('content_id', data.id)
         .eq('status', 'open');
       if (reportCleanupError) {
-        throw new Error(
+        throw new HttpError(
+          500,
+          'REPORT_UPDATE_FAILED',
           '게시물은 숨겼지만 연결된 신고 처리를 갱신하지 못했습니다.',
         );
       }
@@ -786,7 +929,11 @@ Deno.serve(async (request) => {
       await takeLimit(adminClient, userId, 'submit-appeal', 3, 86400);
       const contentType = rawBody.contentType;
       if (contentType !== 'guestbook' && contentType !== 'review') {
-        throw new Error('이의제기 게시물 종류가 올바르지 않습니다.');
+        throw new HttpError(
+          400,
+          'INVALID_INPUT',
+          '이의제기 게시물 종류가 올바르지 않습니다.',
+        );
       }
       const contentId = text(rawBody.contentId, 100);
       const reason = text(rawBody.reason, 1000);
@@ -800,17 +947,36 @@ Deno.serve(async (request) => {
         },
       );
       if (error) {
-        throw new Error('이미 이의제기를 제출했거나 저장하지 못했습니다.');
+        if (error.code === 'P0001') {
+          throw new HttpError(
+            409,
+            'APPEAL_NOT_ALLOWED',
+            '게시물 상태 또는 이의제기 기간을 확인해 주세요.',
+          );
+        }
+        throw new HttpError(
+          500,
+          'APPEAL_SAVE_FAILED',
+          '이의제기를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+        );
       }
       return respond({ submitted: true, appealId: data }, 200, origin);
     }
     if (action === 'resolve-appeal') {
       if (!(await isAdmin(adminClient, userId))) {
-        throw new Error('관리자만 이의제기를 검토할 수 있습니다.');
+        throw new HttpError(
+          403,
+          'ADMIN_REQUIRED',
+          '관리자만 이의제기를 검토할 수 있습니다.',
+        );
       }
       const decision = rawBody.decision;
       if (decision !== 'approve' && decision !== 'reject') {
-        throw new Error('이의제기 처리 방식이 올바르지 않습니다.');
+        throw new HttpError(
+          400,
+          'INVALID_INPUT',
+          '이의제기 처리 방식이 올바르지 않습니다.',
+        );
       }
       const appealId = text(rawBody.appealId, 100);
       const { data: appeal, error: appealError } = await adminClient
@@ -818,8 +984,26 @@ Deno.serve(async (request) => {
         .select('*')
         .eq('id', appealId)
         .maybeSingle();
-      if (appealError || !appeal || appeal.status !== 'pending') {
-        throw new Error('검토 대기 중인 이의제기를 찾지 못했습니다.');
+      if (appealError) {
+        throw new HttpError(
+          503,
+          'APPEAL_LOOKUP_UNAVAILABLE',
+          '이의제기 상태를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+        );
+      }
+      if (!appeal) {
+        throw new HttpError(
+          404,
+          'APPEAL_NOT_FOUND',
+          '이의제기를 찾지 못했습니다.',
+        );
+      }
+      if (appeal.status !== 'pending') {
+        throw new HttpError(
+          409,
+          'APPEAL_NOT_PENDING',
+          '이미 처리된 이의제기입니다. 목록을 새로고침해 주세요.',
+        );
       }
       const decisionReason =
         decision === 'reject'
@@ -828,7 +1012,13 @@ Deno.serve(async (request) => {
             ? rawBody.reason.trim().slice(0, 1000) || null
             : null;
       if (decision === 'reject') {
-        if (!decisionReason) throw new Error('기각 사유를 작성해 주세요.');
+        if (!decisionReason) {
+          throw new HttpError(
+            400,
+            'INVALID_INPUT',
+            '기각 사유를 작성해 주세요.',
+          );
+        }
         await removeStorageObjectsForContent(
           adminClient,
           appeal.content_type,
@@ -843,11 +1033,27 @@ Deno.serve(async (request) => {
           p_decision_reason: decisionReason,
         },
       );
-      if (error || !data) {
-        throw new Error(
+      if (error) {
+        if (error.code === 'P0001') {
+          throw new HttpError(
+            409,
+            'APPEAL_STATE_CONFLICT',
+            '이의제기 또는 게시물 상태가 변경되었습니다. 목록을 새로고침해 주세요.',
+          );
+        }
+        throw new HttpError(
+          500,
+          'APPEAL_RESOLUTION_FAILED',
           decision === 'approve'
             ? '게시물을 복원하지 못해 이의제기를 처리하지 못했습니다.'
             : '게시글과 사진을 삭제하고 결과를 저장하지 못했습니다. 다시 시도해 주세요.',
+        );
+      }
+      if (!data) {
+        throw new HttpError(
+          409,
+          'APPEAL_STATE_CONFLICT',
+          '이의제기 상태가 변경되었습니다. 목록을 새로고침해 주세요.',
         );
       }
       return respond({ resolved: true, ...data }, 200, origin);
@@ -866,7 +1072,11 @@ Deno.serve(async (request) => {
       await takeLimit(adminClient, userId, 'report-content', 5, 86400);
       const contentType = rawBody.contentType;
       if (contentType !== 'guestbook' && contentType !== 'review') {
-        throw new Error('신고 대상이 올바르지 않습니다.');
+        throw new HttpError(
+          400,
+          'INVALID_INPUT',
+          '신고 대상이 올바르지 않습니다.',
+        );
       }
       const table =
         contentType === 'guestbook' ? 'guestbook_posts' : 'schedule_reviews';
@@ -875,11 +1085,26 @@ Deno.serve(async (request) => {
         .select('body, author_name, status, user_id')
         .eq('id', rawBody.contentId)
         .maybeSingle();
-      if (targetError || !target || target.status !== 'published') {
-        throw new Error('신고할 공개 게시물을 찾지 못했습니다.');
+      if (targetError) {
+        throw new HttpError(
+          503,
+          'CONTENT_LOOKUP_UNAVAILABLE',
+          '신고 대상을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+        );
+      }
+      if (!target || target.status !== 'published') {
+        throw new HttpError(
+          404,
+          'CONTENT_NOT_FOUND',
+          '신고할 공개 게시물을 찾지 못했습니다.',
+        );
       }
       if (target.user_id === userId) {
-        throw new Error('본인 게시물은 신고할 수 없습니다.');
+        throw new HttpError(
+          403,
+          'FORBIDDEN',
+          '본인 게시물은 신고할 수 없습니다.',
+        );
       }
       const reason = text(rawBody.reason, 80);
       const details =
@@ -895,7 +1120,20 @@ Deno.serve(async (request) => {
         target_excerpt: target.body.slice(0, 500),
         target_author: target.author_name,
       });
-      if (error) throw new Error('이미 신고했거나 신고를 저장하지 못했습니다.');
+      if (error?.code === '23505') {
+        throw new HttpError(
+          409,
+          'DUPLICATE_REPORT',
+          '이미 신고한 게시물입니다.',
+        );
+      }
+      if (error) {
+        throw new HttpError(
+          500,
+          'REPORT_SAVE_FAILED',
+          '신고를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+        );
+      }
       return respond({ reported: true }, 200, origin);
     }
     if (action === 'update-profile') {
@@ -908,29 +1146,62 @@ Deno.serve(async (request) => {
           updated_at: new Date().toISOString(),
         })
         .eq('id', userId);
-      if (error) throw new Error('표시 이름을 저장하지 못했습니다.');
+      if (error) {
+        throw new HttpError(
+          500,
+          'OPERATION_FAILED',
+          '표시 이름을 저장하지 못했습니다.',
+        );
+      }
       return respond({ saved: true }, 200, origin);
     }
     if (action === 'moderate-report') {
       if (!(await isAdmin(adminClient, userId))) {
-        throw new Error('관리자만 신고를 처리할 수 있습니다.');
+        throw new HttpError(
+          403,
+          'ADMIN_REQUIRED',
+          '관리자만 신고를 처리할 수 있습니다.',
+        );
       }
       const decision = rawBody.decision;
-      if (!['dismiss', 'hide'].includes(decision)) {
-        throw new Error('신고 처리 방식이 올바르지 않습니다.');
+      if (decision !== 'dismiss' && decision !== 'hide') {
+        throw new HttpError(
+          400,
+          'INVALID_INPUT',
+          '신고 처리 방식이 올바르지 않습니다.',
+        );
       }
       const { data: report, error: reportError } = await adminClient
         .from('content_reports')
         .select('*')
         .eq('id', rawBody.reportId)
-        .single();
-      if (reportError) throw new Error('신고 내역을 찾지 못했습니다.');
+        .maybeSingle();
+      if (reportError) {
+        throw new HttpError(
+          503,
+          'REPORT_LOOKUP_UNAVAILABLE',
+          '신고 내역을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+        );
+      }
+      if (!report) {
+        throw new HttpError(
+          404,
+          'REPORT_NOT_FOUND',
+          '신고 내역을 찾지 못했습니다.',
+        );
+      }
       if (decision === 'dismiss') {
         const { error } = await adminClient
           .from('content_reports')
           .update({ status: 'dismissed' })
           .eq('id', report.id);
-        if (error) throw new Error('신고 기각을 저장하지 못했습니다.');
+        if (error) {
+          throw new HttpError(
+            500,
+            'OPERATION_FAILED',
+            '신고 기각을 저장하지 못했습니다.',
+          );
+        }
       } else if (decision === 'hide') {
         const reason = text(rawBody.reason, 1000);
         const table =
@@ -943,7 +1214,11 @@ Deno.serve(async (request) => {
           .eq('id', report.content_id)
           .maybeSingle();
         if (readContentError || !content) {
-          throw new Error('신고 대상 게시물을 찾지 못했습니다.');
+          throw new HttpError(
+            404,
+            'RESOURCE_NOT_FOUND',
+            '신고 대상 게시물을 찾지 못했습니다.',
+          );
         }
         let contentError = null;
         if (content.status === 'published') {
@@ -969,7 +1244,11 @@ Deno.serve(async (request) => {
           .eq('content_id', report.content_id)
           .eq('status', 'open');
         if (contentError || reportError) {
-          throw new Error('신고 숨김 처리를 저장하지 못했습니다.');
+          throw new HttpError(
+            500,
+            'OPERATION_FAILED',
+            '신고 숨김 처리를 저장하지 못했습니다.',
+          );
         }
       }
       return respond({ processed: true }, 200, origin);
@@ -981,18 +1260,34 @@ Deno.serve(async (request) => {
         .delete()
         .eq('author_id', userId);
       if (appealCleanupError) {
-        throw new Error('계정에 연결된 이의제기 기록을 정리하지 못했습니다.');
+        throw new HttpError(
+          500,
+          'OPERATION_FAILED',
+          '계정에 연결된 이의제기 기록을 정리하지 못했습니다.',
+        );
       }
       const { data: media, error: mediaError } = await adminClient
         .from('community_media')
         .select('object_path, byte_size')
         .eq('owner_id', userId);
-      if (mediaError) throw new Error('계정 사진을 확인하지 못했습니다.');
+      if (mediaError) {
+        throw new HttpError(
+          500,
+          'OPERATION_FAILED',
+          '계정 사진을 확인하지 못했습니다.',
+        );
+      }
       if (media?.length) {
         const { error } = await adminClient.storage
           .from('community-images')
           .remove(media.map((item) => item.object_path));
-        if (error) throw new Error('계정 사진 파일을 지우지 못했습니다.');
+        if (error) {
+          throw new HttpError(
+            500,
+            'OPERATION_FAILED',
+            '계정 사진 파일을 지우지 못했습니다.',
+          );
+        }
         for (const item of media) {
           await adminClient.rpc('release_community_media', {
             p_user_id: userId,
@@ -1014,27 +1309,17 @@ Deno.serve(async (request) => {
         .eq('user_id', userId);
       await adminClient.from('schedule_likes').delete().eq('user_id', userId);
       const { error } = await adminClient.auth.admin.deleteUser(userId);
-      if (error) throw new Error('계정을 삭제하지 못했습니다.');
+      if (error) {
+        throw new HttpError(
+          500,
+          'OPERATION_FAILED',
+          '계정을 삭제하지 못했습니다.',
+        );
+      }
       return respond({ deleted: true }, 200, origin);
     }
-    return respond({ error: '지원하지 않는 요청입니다.' }, 400, origin);
+    throw new HttpError(404, 'UNKNOWN_ACTION', '지원하지 않는 요청입니다.');
   } catch (error) {
-    if (error instanceof HttpError) {
-      return respond(
-        { code: error.code, error: error.message },
-        error.status,
-        origin,
-      );
-    }
-    return respond(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : '요청을 처리하지 못했습니다.',
-      },
-      400,
-      origin,
-    );
+    return respondError(error, origin);
   }
 });

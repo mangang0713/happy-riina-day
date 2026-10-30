@@ -3,6 +3,7 @@
  */
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { HttpError } from './http.ts';
 
 /** 게시물에 연결된 사진 파일과 메타데이터를 제거하고 계정 사용량을 반환합니다. */
 export async function removeMediaForContent(
@@ -16,13 +17,25 @@ export async function removeMediaForContent(
     .from('community_media')
     .select('id, owner_id, object_path, byte_size')
     .eq(key, contentId);
-  if (error) throw new Error('첨부 사진 정보를 읽을 수 없습니다.');
+  if (error) {
+    throw new HttpError(
+      500,
+      'MODERATION_OPERATION_FAILED',
+      '첨부 사진 정보를 읽을 수 없습니다.',
+    );
+  }
   if (!media?.length) return;
   const paths = media.map((item) => item.object_path);
   const { error: storageError } = await client.storage
     .from('community-images')
     .remove(paths);
-  if (storageError) throw new Error('첨부 사진 파일을 지우지 못했습니다.');
+  if (storageError) {
+    throw new HttpError(
+      503,
+      'STORAGE_UNAVAILABLE',
+      '첨부 사진 파일을 지우지 못했습니다. 잠시 후 다시 시도해 주세요.',
+    );
+  }
   const { error: removeRecordsError } = await client.rpc(
     'remove_community_media_records',
     {
@@ -30,7 +43,11 @@ export async function removeMediaForContent(
     },
   );
   if (removeRecordsError) {
-    throw new Error('사진 사용량과 첨부 기록을 함께 갱신하지 못했습니다.');
+    throw new HttpError(
+      500,
+      'OPERATION_FAILED',
+      '사진 사용량과 첨부 기록을 함께 갱신하지 못했습니다.',
+    );
   }
 }
 
@@ -46,12 +63,24 @@ export async function removeStorageObjectsForContent(
     .from('community_media')
     .select('object_path')
     .eq(key, contentId);
-  if (error) throw new Error('첨부 사진 정보를 읽을 수 없습니다.');
+  if (error) {
+    throw new HttpError(
+      500,
+      'MODERATION_OPERATION_FAILED',
+      '첨부 사진 정보를 읽을 수 없습니다.',
+    );
+  }
   if (!media?.length) return;
   const { error: storageError } = await client.storage
     .from('community-images')
     .remove(media.map((item) => item.object_path));
-  if (storageError) throw new Error('첨부 사진 파일을 지우지 못했습니다.');
+  if (storageError) {
+    throw new HttpError(
+      503,
+      'STORAGE_UNAVAILABLE',
+      '첨부 사진 파일을 지우지 못했습니다. 잠시 후 다시 시도해 주세요.',
+    );
+  }
 }
 
 /** 즉시 영구 삭제가 허용된 콘텐츠와 사진·관계 기록을 함께 제거합니다. */
@@ -67,7 +96,11 @@ export async function permanentlyDeleteCommunityContent(
     p_required_status: null,
   });
   if (error || !data) {
-    throw new Error('게시물과 관련 기록을 완전히 삭제하지 못했습니다.');
+    throw new HttpError(
+      500,
+      'MODERATION_OPERATION_FAILED',
+      '게시물과 관련 기록을 완전히 삭제하지 못했습니다.',
+    );
   }
 }
 
@@ -85,7 +118,13 @@ export async function attachModerationDetails(
     )
     .in('content_id', ids)
     .order('submitted_at', { ascending: false });
-  if (appealError) throw new Error('이의제기 정보를 불러오지 못했습니다.');
+  if (appealError) {
+    throw new HttpError(
+      500,
+      'OPERATION_FAILED',
+      '이의제기 정보를 불러오지 못했습니다.',
+    );
+  }
   const latestAppealByContent = new Map<string, (typeof appeals)[number]>();
   for (const appeal of appeals ?? []) {
     const key = `${appeal.content_type}:${appeal.content_id}`;
@@ -111,7 +150,13 @@ export async function attachModerationDetails(
       .from('community_media')
       .select('id, object_path, byte_size, content_type, guestbook_post_id')
       .in('guestbook_post_id', guestbookIds);
-    if (error) throw new Error('게시물 사진 정보를 불러오지 못했습니다.');
+    if (error) {
+      throw new HttpError(
+        500,
+        'OPERATION_FAILED',
+        '게시물 사진 정보를 불러오지 못했습니다.',
+      );
+    }
     mediaRows.push(
       ...(data ?? []).map((item) => ({
         id: item.id,
@@ -128,7 +173,13 @@ export async function attachModerationDetails(
       .from('community_media')
       .select('id, object_path, byte_size, content_type, schedule_review_id')
       .in('schedule_review_id', reviewIds);
-    if (error) throw new Error('게시물 사진 정보를 불러오지 못했습니다.');
+    if (error) {
+      throw new HttpError(
+        500,
+        'OPERATION_FAILED',
+        '게시물 사진 정보를 불러오지 못했습니다.',
+      );
+    }
     mediaRows.push(
       ...(data ?? []).map((item) => ({
         id: item.id,
@@ -195,7 +246,11 @@ export async function purgeExpiredCommunityContent(client: SupabaseClient) {
     .delete()
     .lte('expires_at', now);
   if (appealResultError) {
-    throw new Error('만료된 이의제기 결과 안내를 정리하지 못했습니다.');
+    throw new HttpError(
+      500,
+      'OPERATION_FAILED',
+      '만료된 이의제기 결과 안내를 정리하지 못했습니다.',
+    );
   }
 
   const [guestbookResult, reviewResult] = await Promise.all([
@@ -215,7 +270,11 @@ export async function purgeExpiredCommunityContent(client: SupabaseClient) {
       .limit(50),
   ]);
   if (guestbookResult.error || reviewResult.error) {
-    throw new Error('만료된 숨김 게시물을 확인하지 못했습니다.');
+    throw new HttpError(
+      500,
+      'OPERATION_FAILED',
+      '만료된 숨김 게시물을 확인하지 못했습니다.',
+    );
   }
   const candidates = [
     ...(guestbookResult.data ?? []).map((item) => ({
@@ -238,7 +297,11 @@ export async function purgeExpiredCommunityContent(client: SupabaseClient) {
       candidates.map((item) => item.id),
     );
   if (pendingError) {
-    throw new Error('진행 중인 이의제기를 확인하지 못했습니다.');
+    throw new HttpError(
+      500,
+      'OPERATION_FAILED',
+      '진행 중인 이의제기를 확인하지 못했습니다.',
+    );
   }
   const pendingKeys = new Set(
     (pendingAppeals ?? []).map(
@@ -257,7 +320,13 @@ export async function purgeExpiredCommunityContent(client: SupabaseClient) {
           p_content_id: item.id,
         },
       );
-      if (claimError) throw new Error('영구 삭제 작업을 시작하지 못했습니다.');
+      if (claimError) {
+        throw new HttpError(
+          500,
+          'MODERATION_OPERATION_FAILED',
+          '영구 삭제 작업을 시작하지 못했습니다.',
+        );
+      }
       if (!claimed) continue;
       await removeMediaForContent(client, item.content_type, item.id);
       const { data: removed, error: purgeError } = await client.rpc(
@@ -269,7 +338,11 @@ export async function purgeExpiredCommunityContent(client: SupabaseClient) {
         },
       );
       if (purgeError || !removed) {
-        throw new Error('만료된 게시물을 최종 삭제하지 못했습니다.');
+        throw new HttpError(
+          500,
+          'MODERATION_OPERATION_FAILED',
+          '만료된 게시물을 최종 삭제하지 못했습니다.',
+        );
       }
       purged += 1;
     } catch (error) {

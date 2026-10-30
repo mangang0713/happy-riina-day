@@ -1,4 +1,4 @@
-import { createHttpHelpers, getBearer, text } from './http.ts';
+import { createHttpHelpers, getBearer, HttpError, text } from './http.ts';
 
 function assertEqual<T>(actual: T, expected: T) {
   if (actual !== expected) {
@@ -60,4 +60,49 @@ Deno.test('문자열 입력은 공백을 정리하고 글자 수 제한을 지�
     rejected = true;
   }
   assertEqual(rejected, true);
+});
+
+Deno.test('예상 가능한 오류는 안정적인 코드와 상태로 반환한다', async () => {
+  const { respondError } = createHttpHelpers(new Set());
+  const response = respondError(
+    new HttpError(
+      409,
+      'CONTENT_CONFLICT',
+      '현재 상태에서는 처리할 수 없습니다.',
+    ),
+  );
+  const body = await response.json();
+
+  assertEqual(response.status, 409);
+  assertEqual(body.code, 'CONTENT_CONFLICT');
+  assertEqual(body.error, '현재 상태에서는 처리할 수 없습니다.');
+});
+
+Deno.test(
+  '예상하지 못한 오류의 내부 메시지는 응답에 노출하지 않는다',
+  async () => {
+    const { respondError } = createHttpHelpers(new Set());
+    const response = respondError(new Error('private database detail'));
+    const body = await response.json();
+
+    assertEqual(response.status, 500);
+    assertEqual(body.code, 'INTERNAL_SERVER_ERROR');
+    assertEqual(body.error.includes('private database detail'), false);
+    assertEqual(typeof body.requestId, 'string');
+  },
+);
+
+Deno.test('잘못된 문자열 입력은 400 오류로 구분한다', () => {
+  let error: unknown;
+  try {
+    text('너무 길어요', 2);
+  } catch (caught) {
+    error = caught;
+  }
+
+  if (!(error instanceof HttpError)) {
+    throw new Error('Expected HttpError');
+  }
+  assertEqual(error.status, 400);
+  assertEqual(error.code, 'INVALID_INPUT');
 });
