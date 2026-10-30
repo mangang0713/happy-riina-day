@@ -74,7 +74,7 @@ npm run worker:typecheck
 deno check supabase/functions/community-api/index.ts
 ```
 
-Supabase Edge Function의 Turnstile fail-closed 개선은 코드에 반영했지만 아직 원격 배포하지 않았습니다. 현재 공개 사이트의 동작은 배포된 기존 Function 기준입니다.
+Supabase Edge Function `community-api` version 12로 2026-10-30에 배포했습니다. Turnstile Siteverify 실패 경로는 가짜 응답을 주입하는 Deno 테스트로 검증하고, 액션별 HTTP 오류 코드와 내부 오류 정보 비노출을 적용했습니다. 배포 후에는 공개 방명록 읽기 RPC의 HTTP 200, 잘못된 JSON의 HTTP 400, 비로그인 쓰기 요청의 HTTP 401을 확인했습니다. version 10에서 확인한 로그인 방명록·후기 작성 흐름 기록은 아래 운영 문서를 참고하세요.
 
 ## 실행 방법
 

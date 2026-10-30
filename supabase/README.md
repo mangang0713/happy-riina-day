@@ -1,6 +1,6 @@
 # Supabase 커뮤니티 기능 설정
 
-Supabase 프로젝트의 커뮤니티 DB 마이그레이션과 `community-api` Edge Function을 적용했고, Turnstile도 연결했습니다. GitHub Pages 빌드에는 GitHub 저장소의 Actions 변수로 Supabase와 Turnstile 공개 설정을 전달합니다. 2026-10-21 공개 배포본에서 방명록 공개 조회를 확인했으며, 배포 환경의 로그인과 글 작성 등 전체 커뮤니티 흐름은 출시 전에 다시 점검해야 합니다. 설정이나 커뮤니티 기능에 문제가 있어도 지도와 정적 일정은 계속 동작합니다. 이 문서는 DB와 서버 기능의 배포·운영 절차를 정리합니다.
+Supabase 프로젝트의 커뮤니티 DB 마이그레이션과 `community-api` Edge Function을 적용했고, Turnstile도 연결했습니다. GitHub Pages 빌드에는 GitHub 저장소의 Actions 변수로 Supabase와 Turnstile 공개 설정을 전달합니다. 2026-10-21에는 공개 배포본의 방명록 조회를, 2026-10-29에는 로그인 후 방명록·후기 작성과 삭제를 확인했습니다. 2026-10-30에는 보안 오류 처리 개선본을 `community-api` version 12로 배포하고 잘못된 요청 형식과 비로그인 요청의 오류 응답을 확인했습니다. 모든 커뮤니티 흐름의 재검증은 출시 전에 필요합니다. 설정이나 커뮤니티 기능에 문제가 있어도 지도와 정적 일정은 계속 동작합니다. 이 문서는 DB와 서버 기능의 배포·운영 절차를 정리합니다.
 
 ## 배포 전 준비
 
@@ -33,11 +33,14 @@ Supabase 프로젝트의 커뮤니티 DB 마이그레이션과 `community-api` E
 - `functions/community-api/index.ts`는 요청 인증, 제한·약관·관리자 권한 확인과 방명록·후기·신고·이의제기·계정 요청 분기를 조율합니다. `verify_jwt = false`여도 일반 사용자 요청은 함수 내부에서 `auth.getUser(token)`으로 검증됩니다.
 - 현재 API는 하나의 POST 진입점에서 `action` 값으로 기능을 구분합니다. 방명록·후기는 `create-guestbook`·`edit-guestbook`·`create-review`·`edit-review`, 반응은 `toggle-like`, 미디어는 multipart `upload-image`와 `signed-media`·`delete-media`, 사용자 관리 기능은 `report-content`·`submit-appeal`·`delete-content`·`delete-account` 등으로 분기합니다. 관리자 전용 조회·운영은 `get-admin-*`·`update-admin-settings`·`moderate-report`·`resolve-appeal`이며, 예약 정리는 사용자 토큰 대신 `COMMUNITY_PURGE_SECRET`으로 인증합니다.
 - `functions/community-api/http.ts`는 CORS 헤더, JSON 응답, Bearer 토큰 읽기와 문자열 입력 검증을 제공합니다. CORS는 브라우저 응답을 제한하는 설정이며 API 인증을 대신하지 않습니다. `http_test.ts`는 이 공통 도구의 동작을 Deno로 검사합니다.
+- 검증 명령은 `deno test supabase/functions/community-api/http_test.ts supabase/functions/community-api/turnstile_test.ts`, `deno check supabase/functions/community-api/index.ts supabase/functions/community-api/turnstile_test.ts`, `deno lint --rules-exclude=no-import-prefix supabase/functions/community-api/http.ts supabase/functions/community-api/http_test.ts supabase/functions/community-api/index.ts supabase/functions/community-api/media.ts supabase/functions/community-api/moderation.ts supabase/functions/community-api/turnstile.ts supabase/functions/community-api/turnstile_test.ts`입니다. lint에서 import-prefix 규칙만 제외하는 것은 기존 Supabase 원격 모듈 import 형식 때문입니다.
 - `deno check supabase/functions/community-api/index.ts`는 Edge Function의 정적 타입을 확인합니다. 루트 `deno.lock`은 Deno가 해석한 Supabase 원격 모듈 버전을 기록해 다음 검사에서 의존성 변경을 알아보기 쉽게 합니다.
 - `functions/community-api/media.ts`는 비공개 Storage 업로드, 파일 검증, 사용량 예약·정산, 제한 시간 URL과 사진 삭제를 처리합니다.
 - `functions/community-api/moderation.ts`는 숨김 콘텐츠, 이의제기 정보 연결, 만료 시 콘텐츠·파일 정리를 처리합니다.
+- 2026-10-30 배포 후 `community-api` version 12가 ACTIVE이고 `verify_jwt = false`임을 CLI에서 확인했습니다. 배포 후 공개 방명록의 읽기 전용 RPC는 HTTP 200, 잘못된 JSON은 HTTP 400 `INVALID_REQUEST_BODY`, 인증 없는 쓰기는 HTTP 401 `UNAUTHORIZED`를 반환했습니다. 읽기 응답 본문은 기록하지 않았고, 잘못된 요청은 저장 데이터를 생성하지 않았습니다. Turnstile 외부 오류 분기는 위의 모의 응답 테스트로 검증했으며 운영 Cloudflare 장애를 일부러 재현하지 않았습니다. 로그인 세션을 이용한 잘못된 토큰의 원격 요청은 이번 smoke test에서 실행하지 않았습니다.
 - SQL은 RLS로 직접 테이블 접근을 제한하고, 공개 조회와 일부 작업은 권한이 제한된 `SECURITY DEFINER` 함수로 제공합니다. `service_role` 키는 Edge Function 안에서만 사용해야 합니다.
-- 첫 보안 개선으로 Turnstile secret 누락을 fail-closed로 바꿨다. secret이 없거나 Siteverify 응답을 확인할 수 없으면 보호 대상 글 작성·수정을 통과시키지 않는다. 인증, 속도 제한, 봇 확인은 각각 HTTP 상태와 오류 코드를 반환한다. 나머지 기존 액션은 아직 예외를 HTTP 400으로 반환할 수 있어 다음 단계에서 액션별 계약을 더 세분화해야 한다. 이 코드는 로컬 변경이며 Edge Function에는 아직 배포하지 않았다.
+- Turnstile 검증은 `turnstile.ts`에 분리되어 secret·토큰 누락, 유효 토큰, 무효 토큰, 잘못된 호스트, Cloudflare 비정상 응답, 연결 실패와 잘못된 JSON을 각각 검사합니다. Siteverify 호출에 테스트용 `fetcher`를 주입하므로 실제 Cloudflare를 중단하지 않고 실패 상황을 재현할 수 있습니다. 보호 대상 쓰기는 검증에 실패하면 통과하지 않습니다.
+- `respondError`는 예상 가능한 입력·인증·권한·미존재·충돌·요청 제한·외부 서비스 오류를 각 HTTP 상태와 안정적인 `{ code, error }` 응답으로 변환합니다. 처리되지 않은 예외는 세부 내용을 로그에만 남기고 일반화된 HTTP 500으로 응답합니다. 프런트엔드가 오류 코드와 한국어 안내 문구를 계속 읽을 수 있습니다.
 - 첫 코드 정리로 공통 HTTP 도구를 `http.ts`에 분리하고 응답·CORS·입력 검증 테스트 4개를 추가했다. 이 변경은 DB 스키마를 수정하지 않으며, 2026-10-22에 `community-api` version 9로 배포했다. CLI 원격 마이그레이션 목록에는 `202610220001`만 기록되고 이전 8개 로컬 마이그레이션은 원격 기록에서 확인되지 않았다. 원격 DB 구조와 SQL Editor 실행 이력을 대조하기 전까지 이 차이를 `db push`나 migration repair로 정리하지 않는다. 후속 작업은 액션별 인증·권한·DB 변경 경계를 검사하고 요청 분기를 책임별 핸들러로 나누는 것이다. 자체 백엔드 이전은 아직 시작하지 않는다.
 
 ## 한도와 운영
