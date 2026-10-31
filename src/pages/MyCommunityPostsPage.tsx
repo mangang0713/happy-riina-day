@@ -35,6 +35,8 @@ function MyCommunityPostsPage() {
   const [appealResults, setAppealResults] = useState<CommunityAppealResult[]>(
     [],
   );
+  const [loadedForUserId, setLoadedForUserId] = useState<string>();
+  const [failedForUserId, setFailedForUserId] = useState<string>();
   const [appealTarget, setAppealTarget] = useState<string>();
   const [appealReason, setAppealReason] = useState('');
   const [busyId, setBusyId] = useState<string>();
@@ -47,11 +49,14 @@ function MyCommunityPostsPage() {
 
   const refresh = useCallback(async () => {
     if (!configured || !user) return;
+    setFailedForUserId(undefined);
     try {
       const content = await getMyCommunityContent();
       setPosts(content.posts);
       setAppealResults(content.appealResults);
+      setLoadedForUserId(user.id);
     } catch (error) {
+      setFailedForUserId(user.id);
       setMessage(
         error instanceof Error
           ? error.message
@@ -59,6 +64,15 @@ function MyCommunityPostsPage() {
       );
     }
   }, [configured, user]);
+
+  // 계정이 바뀌면 새 계정의 응답이 오기 전까지 이전 계정의 목록을 숨깁니다.
+  const hasLoadedForCurrentUser = Boolean(user && loadedForUserId === user.id);
+  const isLoadingCurrentUser = Boolean(
+    configured &&
+      user &&
+      !hasLoadedForCurrentUser &&
+      failedForUserId !== user.id,
+  );
 
   // Fetching begins after mount; state changes happen when the request settles.
 
@@ -168,10 +182,19 @@ function MyCommunityPostsPage() {
       )}
       {configured && user && (
         <>
+          {isLoadingCurrentUser && (
+            <p className="community-muted" role="status">
+              내 게시글을 불러오고 있습니다.
+            </p>
+          )}
           <div
             className="my-post-tabs"
             role="group"
             aria-label="내 게시글 분류"
+            hidden={!hasLoadedForCurrentUser}
+            style={{
+              display: hasLoadedForCurrentUser ? undefined : 'none',
+            }}
           >
             {tabs.map((tab) => (
               <button
@@ -186,7 +209,13 @@ function MyCommunityPostsPage() {
               </button>
             ))}
           </div>
-          <div className="guestbook-list">
+          <div
+            className="guestbook-list"
+            hidden={!hasLoadedForCurrentUser}
+            style={{
+              display: hasLoadedForCurrentUser ? undefined : 'none',
+            }}
+          >
             {visiblePosts.map((post) => {
               const appealOpen = Boolean(
                 post.purge_after && now < new Date(post.purge_after).getTime(),
@@ -378,7 +407,8 @@ function MyCommunityPostsPage() {
                   </div>
                 </article>
               ))}
-            {visiblePosts.length === 0 &&
+            {hasLoadedForCurrentUser &&
+              visiblePosts.length === 0 &&
               !(activeTab === 'results' && appealResults.length > 0) && (
                 <p className="empty-state">{emptyMessages[activeTab]}</p>
               )}
