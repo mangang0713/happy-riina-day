@@ -746,5 +746,14 @@ export const locations: Location[] = [
       128.9970255,
       35.16792
     ]
+  },
+  {
+    "id": "venue-084",
+    "name": "KSPO 스포츠가치센터",
+    "address": "경상남도 진주시 내동면 삼계로 360",
+    "coordinates": [
+      128.034831,
+      35.156208
+    ]
   }
 ]

@@ -1457,6 +1457,7 @@ export const schedules: Schedule[] = [
   },
   {
     "id": "schedule-2026-10-17-01",
+    "locationId": "venue-084",
     "eventFormat": "in-person",
     "title": "2026 스포츠 가치데이 페스티벌",
     "date": "2026-10-17",
