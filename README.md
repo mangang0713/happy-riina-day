@@ -198,6 +198,12 @@ Supabase 프로젝트에 DB 마이그레이션과 `community-api` Edge Function�
 
 프로젝트 연결, OAuth·Turnstile 설정, 관리자 권한, 사용량 중단 기준은 [Supabase 설정 및 운영 안내](supabase/README.md)에 정리했습니다. 개인정보 안내에는 운영자 문의 계정 `@hessxl_`와 2027년 12월 31일 이후 서비스 데이터 폐기 예정일을 반영했습니다. 공개 운영 전 실제 처리 흐름과 정책의 일치 여부, 로그인·작성·수정·삭제·신고·관리 권한을 검증해야 합니다.
 
+### 자체 백엔드 학습 파일럿
+
+Supabase 의존도를 줄이는 방법을 학습하기 위해 `workers/community-api/`에 Hono·Cloudflare Workers API와 Better Auth, PostgreSQL 기반 로컬 파일럿을 별도로 구성했습니다. 공개 사이트와 사용자 데이터는 계속 Supabase를 사용합니다. 파일럿은 아직 브라우저 화면이나 운영 DB·Storage에 연결되지 않았고 배포하지 않았습니다. 프런트엔드에는 공개 목록을 읽는 typed API 클라이언트만 준비되어 있으며 React 화면에서는 호출하지 않습니다.
+
+로컬 DB와 Worker 실행 방법, API·보안 경계 및 미완료 항목은 [Worker 파일럿 안내](workers/community-api/README.md)와 [백엔드 이전 현황 및 파일럿 기록](docs/backend-migration/current-state-and-pilot.md)을 참고하세요.
+
 ## 개발 현황
 
 - [x] 생일 랜딩 페이지와 지도 아카이브(`/archive`) 경로 분리
