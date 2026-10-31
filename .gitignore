@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 supabase/.temp/
+.dev.vars
+.wrangler/
+.qa-wrangler-state/
+dist-workers/
+dist-worker-bundle/
 
 # Environment variables
 .env

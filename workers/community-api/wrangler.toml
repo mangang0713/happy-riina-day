@@ -1,0 +1,23 @@
+name = "happy-riina-day-worker-pilot"
+main = "src/index.ts"
+compatibility_date = "2026-10-30"
+compatibility_flags = ["nodejs_compat"]
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[assets]
+directory = "../../dist-workers"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+# Local development uses Docker PostgreSQL. Replace this placeholder only after
+# creating the production Hyperdrive configuration for Neon.
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "00000000000000000000000000000000"
+localConnectionString = "postgres://archive:local-development-only@127.0.0.1:5433/happy_riina_day"
+
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "happy-riina-day-community-media"

@@ -6,23 +6,35 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "worker:assets": "vite build --base=/ --outDir dist-workers",
+    "worker:typecheck": "tsc -p workers/community-api/tsconfig.json",
+    "worker:dev": "npm run worker:assets && wrangler dev --config workers/community-api/wrangler.toml",
+    "worker:build": "npm run worker:typecheck && npm run worker:assets && wrangler deploy --dry-run --outdir dist-worker-bundle --config workers/community-api/wrangler.toml",
+    "worker:test": "vitest run workers/community-api/src",
+    "worker:db:up": "docker compose -f workers/compose.yaml up -d",
+    "worker:db:down": "docker compose -f workers/compose.yaml down",
     "lint": "eslint .",
-    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"supabase/**/*.ts\" \"scripts/**/*.mjs\" \"eslint.config.js\" \"vite.config.ts\" \"tsconfig*.json\" \"package.json\" \".prettierrc\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"supabase/**/*.ts\" \"scripts/**/*.mjs\" \"eslint.config.js\" \"vite.config.ts\" \"tsconfig*.json\" \"package.json\" \".prettierrc\"",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"workers/**/*.ts\" \"supabase/**/*.ts\" \"scripts/**/*.mjs\" \"eslint.config.js\" \"vite.config.ts\" \"tsconfig*.json\" \"package.json\" \".prettierrc\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"workers/**/*.ts\" \"supabase/**/*.ts\" \"scripts/**/*.mjs\" \"eslint.config.js\" \"vite.config.ts\" \"tsconfig*.json\" \"package.json\" \".prettierrc\"",
     "data:import": "node scripts/import-schedules.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
+    "better-auth": "^1.7.14",
+    "hono": "^4.13.14",
     "maplibre-gl": "^6.13.0",
+    "pg": "^8.23.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261031.1",
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.13.3",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
@@ -35,6 +47,8 @@
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.69.0",
-    "vite": "^8.3.0"
+    "vite": "^8.3.0",
+    "vitest": "^5.0.5",
+    "wrangler": "^4.156.0"
   }
 }

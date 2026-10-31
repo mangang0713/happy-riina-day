@@ -1,0 +1,15 @@
+# Copy to .dev.vars for local Worker OAuth tests. Never reuse these in production.
+BETTER_AUTH_SECRET=local-only-secret-change-before-use-000000000000
+BETTER_AUTH_URL=http://localhost:8787
+APP_ORIGIN=http://localhost:8787
+
+# Empty provider credentials leave that sign-in option disabled locally.
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+TWITTER_CLIENT_ID=
+TWITTER_CLIENT_SECRET=
+KAKAO_CLIENT_ID=
+KAKAO_CLIENT_SECRET=
+
+# Required for local write endpoints. An empty value blocks writes with 503.
+TURNSTILE_SECRET_KEY=
