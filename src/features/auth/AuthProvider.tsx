@@ -92,6 +92,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           provider,
           options: {
             redirectTo,
+            // X 로그인은 계정 확인과 이메일 연결에만 쓰므로 게시물 조회·X 토큰 갱신 권한은 요청하지 않습니다.
+            scopes:
+              provider === 'x' ? 'users.email users.read' : undefined,
             queryParams:
               provider === 'x' ? { response_type: 'code' } : undefined,
             skipBrowserRedirect: false,
