@@ -1,11 +1,12 @@
 /**
- * 이 파일은 Supabase 커뮤니티 API에서 주고받는 글·사진·신고·이의제기 자료의 형태를 정의합니다.
+ * 이 파일은 커뮤니티 화면에서 사용하는 글·사진·신고·이의제기 자료의 형태를 정의합니다.
  */
 
 /** 비공개 Storage에 저장된 사진의 메타데이터와 임시 보기 주소입니다. */
 export type CommunityMedia = {
   id: string;
-  object_path: string;
+  /** Supabase 저장 경로이며 Worker API 응답에서는 비공개 경로를 노출하지 않습니다. */
+  object_path?: string;
   byte_size: number;
   content_type: string;
   signed_url?: string;
