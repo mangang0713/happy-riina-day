@@ -14,6 +14,43 @@ import type {
   ScheduleReview,
 } from './types';
 import { supabase, supabaseConfig } from '../../lib/supabase/client';
+import { isWorkerBackend } from './backendMode';
+import {
+  deleteWorkerCommunityContent,
+  deleteWorkerCommunityMedia,
+  editWorkerGuestbookPost,
+  editWorkerScheduleReview,
+  toggleWorkerScheduleLike,
+  uploadWorkerCommunityMedia,
+  createWorkerGuestbookPost,
+  createWorkerScheduleReview,
+  acceptWorkerCommunityTerms,
+} from './workerCommunityWrites';
+import {
+  getWorkerAdminCommunitySettings,
+  getWorkerAdminHiddenContent,
+  getWorkerAdminReports,
+  WorkerApiError,
+  getWorkerCurrentUser,
+  getWorkerMyCommunityContent,
+  getWorkerMyProfile,
+  getWorkerOwnScheduleReview,
+  getWorkerPublicCommunitySettings,
+  getWorkerScheduleReactions,
+  getWorkerScheduleReviews,
+  getWorkerGuestbookPosts,
+  updateWorkerAdminCommunitySettings,
+  updateWorkerProfile,
+} from './workerApi';
+import {
+  hideWorkerCommunityContent,
+  reportWorkerCommunityContent,
+  restoreWorkerCommunityContent,
+  submitWorkerCommunityAppeal,
+  decideWorkerCommunityAppeal,
+  decideWorkerCommunityReport,
+} from './workerModerationWrites';
+import { deleteWorkerAuthUser } from '../auth/workerAuthClient';
 
 const PAGE_SIZE = 12;
 
@@ -48,7 +85,9 @@ export class GuestbookPhotoUploadError extends CommunityRequestError {
     super(
       details.code,
       details.message,
-      error instanceof CommunityRequestError ? error.status : undefined,
+      error instanceof CommunityRequestError || error instanceof WorkerApiError
+        ? error.status
+        : undefined,
     );
     this.name = 'GuestbookPhotoUploadError';
     this.postId = postId;
@@ -61,6 +100,9 @@ export class GuestbookPhotoUploadError extends CommunityRequestError {
 /** 화면이 서버 오류를 사용자에게 설명할 수 있도록 공통 오류 정보를 뽑습니다. */
 export function getCommunityErrorDetails(error: unknown) {
   if (error instanceof CommunityRequestError) {
+    return { code: error.code, message: error.message };
+  }
+  if (error instanceof WorkerApiError) {
     return { code: error.code, message: error.message };
   }
   return {
@@ -181,6 +223,7 @@ async function addSignedMedia<
 
 /** 방문자 화면이 쓰기 중단 여부를 결정할 수 있도록 공개 커뮤니티 설정을 읽습니다. */
 export async function getCommunitySettings(): Promise<CommunitySettings> {
+  if (isWorkerBackend) return getWorkerPublicCommunitySettings();
   const client = requireClient();
   const { data, error } = await client
     .rpc('get_public_community_settings')
@@ -191,6 +234,7 @@ export async function getCommunitySettings(): Promise<CommunitySettings> {
 
 /** 방명록 공개 글을 페이지 단위로 불러오고 사진을 임시 주소로 연결합니다. */
 export async function getGuestbookPosts(page = 0) {
+  if (isWorkerBackend) return getWorkerGuestbookPosts(page);
   const client = requireClient();
   const { data, error } = await client.rpc('get_public_guestbook', {
     p_offset: page * PAGE_SIZE,
@@ -211,6 +255,9 @@ export async function getScheduleReviews(
   page = 0,
   limit = PAGE_SIZE,
 ) {
+  if (isWorkerBackend) {
+    return getWorkerScheduleReviews(scheduleId, page, limit);
+  }
   const client = requireClient();
   const safeLimit = Math.max(1, Math.min(PAGE_SIZE, Math.floor(limit)));
   const { data, error } = await client.rpc('get_public_schedule_reviews', {
@@ -229,6 +276,7 @@ export async function getScheduleReviews(
 
 /** 로그인 사용자가 작성한 일정 후기를 수정 화면에 불러옵니다. */
 export async function getOwnScheduleReview(scheduleId: string) {
+  if (isWorkerBackend) return getWorkerOwnScheduleReview(scheduleId);
   const client = requireClient();
   const { data, error } = await client
     .rpc('get_own_schedule_review', { p_schedule_id: scheduleId })
@@ -246,6 +294,7 @@ export async function getScheduleReactions(
   scheduleId: string,
   userId?: string,
 ) {
+  if (isWorkerBackend) return getWorkerScheduleReactions(scheduleId);
   const client = requireClient();
   void userId;
   const { data: rawStats, error } = await client
@@ -272,6 +321,33 @@ export async function saveGuestbookPost(
   turnstileToken?: string,
 ) {
   const createdPost = !postId;
+  if (isWorkerBackend) {
+    const result = postId
+      ? await editWorkerGuestbookPost(postId, body, turnstileToken ?? '')
+      : await createWorkerGuestbookPost(body, turnstileToken ?? '');
+    let uploadedPhotoCount = 0;
+    for (const file of media) {
+      try {
+        const prepared = await prepareCommunityImage(file);
+        await uploadWorkerCommunityMedia(
+          prepared,
+          'guestbook',
+          result.id,
+          turnstileToken ?? '',
+        );
+        uploadedPhotoCount += 1;
+      } catch (error) {
+        throw new GuestbookPhotoUploadError(
+          result.id,
+          createdPost,
+          uploadedPhotoCount,
+          media.length,
+          error,
+        );
+      }
+    }
+    return result;
+  }
   const result = await invoke<{ id: string }>(
     postId ? 'edit-guestbook' : 'create-guestbook',
     { postId, body, turnstileToken },
@@ -296,6 +372,7 @@ export async function saveGuestbookPost(
 
 /** 개인정보 공개 약관에 동의한 시점을 서버에 기록합니다. */
 export async function acceptCommunityTerms() {
+  if (isWorkerBackend) return acceptWorkerCommunityTerms();
   return invoke('accept-community-terms');
 }
 
@@ -308,6 +385,32 @@ export async function saveScheduleReview(
   reviewId?: string,
   turnstileToken?: string,
 ) {
+  if (isWorkerBackend) {
+    const result = reviewId
+      ? await editWorkerScheduleReview(
+          scheduleId,
+          reviewId,
+          body,
+          rating,
+          turnstileToken ?? '',
+        )
+      : await createWorkerScheduleReview(
+          scheduleId,
+          body,
+          rating,
+          turnstileToken ?? '',
+        );
+    for (const file of media) {
+      const prepared = await prepareCommunityImage(file);
+      await uploadWorkerCommunityMedia(
+        prepared,
+        'review',
+        result.id,
+        turnstileToken ?? '',
+      );
+    }
+    return result;
+  }
   const result = await invoke<{ id: string }>(
     reviewId ? 'edit-review' : 'create-review',
     { reviewId, scheduleId, body, rating, turnstileToken },
@@ -446,6 +549,7 @@ async function prepareCommunityImage(file: File): Promise<File> {
 
 /** 로그인 사용자의 일정 좋아요 상태를 서버에서 추가하거나 취소합니다. */
 export async function toggleScheduleLike(scheduleId: string) {
+  if (isWorkerBackend) return toggleWorkerScheduleLike(scheduleId);
   return invoke<{ liked: boolean }>('toggle-like', { scheduleId });
 }
 
@@ -454,6 +558,9 @@ export async function deleteCommunityContent(
   contentType: 'guestbook' | 'review',
   contentId: string,
 ) {
+  if (isWorkerBackend) {
+    return deleteWorkerCommunityContent(contentType, contentId);
+  }
   return invoke('delete-content', { contentType, contentId });
 }
 
@@ -463,11 +570,15 @@ export async function hideCommunityContent(
   contentId: string,
   reason: string,
 ) {
+  if (isWorkerBackend) {
+    return hideWorkerCommunityContent(contentType, contentId, reason);
+  }
   return invoke('hide-content', { contentType, contentId, reason });
 }
 
 /** 사진 한 장을 Storage와 연결 메타데이터에서 함께 삭제합니다. */
 export async function deleteCommunityMedia(mediaId: string) {
+  if (isWorkerBackend) return deleteWorkerCommunityMedia(mediaId);
   return invoke('delete-media', { mediaId });
 }
 
@@ -478,21 +589,32 @@ export async function reportCommunityContent(
   reason: string,
   details: string,
 ) {
+  if (isWorkerBackend) {
+    return reportWorkerCommunityContent(
+      contentType,
+      contentId,
+      reason,
+      details,
+    );
+  }
   return invoke('report-content', { contentType, contentId, reason, details });
 }
 
 /** 관리자가 미처리 신고와 대상 콘텐츠 일부를 확인합니다. */
 export async function getAdminReports() {
+  if (isWorkerBackend) return getWorkerAdminReports();
   return invoke<ContentReport[]>('get-admin-reports');
 }
 
 /** 관리자가 숨겨져 보존 중인 글과 이의제기 진행 상태를 확인합니다. */
 export async function getAdminHiddenContent() {
+  if (isWorkerBackend) return getWorkerAdminHiddenContent();
   return invoke<HiddenCommunityContent[]>('get-admin-hidden-content');
 }
 
 /** 작성자가 자신의 글, 숨김 사유, 진행 중 이의제기와 결과를 확인합니다. */
 export async function getMyCommunityContent() {
+  if (isWorkerBackend) return getWorkerMyCommunityContent();
   const response = await invoke<
     | MyCommunityContent[]
     | { posts: MyCommunityContent[]; appealResults: CommunityAppealResult[] }
@@ -508,6 +630,9 @@ export async function submitCommunityAppeal(
   contentId: string,
   reason: string,
 ) {
+  if (isWorkerBackend) {
+    return submitWorkerCommunityAppeal(contentType, contentId, reason);
+  }
   return invoke('submit-appeal', { contentType, contentId, reason });
 }
 
@@ -517,6 +642,9 @@ export async function resolveCommunityAppeal(
   decision: 'approve' | 'reject',
   reason: string,
 ) {
+  if (isWorkerBackend) {
+    return decideWorkerCommunityAppeal(appealId, decision, reason);
+  }
   return invoke('resolve-appeal', { appealId, decision, reason });
 }
 
@@ -525,6 +653,9 @@ export async function restoreHiddenCommunityContent(
   contentType: 'guestbook' | 'review',
   contentId: string,
 ) {
+  if (isWorkerBackend) {
+    return restoreWorkerCommunityContent(contentType, contentId);
+  }
   return invoke('restore-hidden-content', { contentType, contentId });
 }
 
@@ -534,11 +665,15 @@ export async function moderateReport(
   decision: 'dismiss' | 'hide',
   reason = '',
 ) {
+  if (isWorkerBackend) {
+    return decideWorkerCommunityReport(reportId, decision, reason);
+  }
   return invoke('moderate-report', { reportId, decision, reason });
 }
 
 /** 관리자가 운영 스위치와 저장소 사용량을 확인합니다. */
 export async function getAdminCommunitySettings(): Promise<AdminCommunitySettings> {
+  if (isWorkerBackend) return getWorkerAdminCommunitySettings();
   return invoke<AdminCommunitySettings>('get-admin-settings');
 }
 
@@ -551,11 +686,13 @@ export async function updateAdminCommunitySettings(
     >
   >,
 ) {
+  if (isWorkerBackend) return updateWorkerAdminCommunitySettings(settings);
   return invoke('update-admin-settings', { settings });
 }
 
 /** 로그인 사용자의 공개 표시 이름을 데이터베이스 검증 함수에 저장합니다. */
 export async function updateProfile(displayName: string) {
+  if (isWorkerBackend) return updateWorkerProfile(displayName);
   const client = requireClient();
   const { data, error } = await client.rpc('save_my_display_name', {
     p_display_name: displayName,
@@ -566,11 +703,24 @@ export async function updateProfile(displayName: string) {
 
 /** 로그인 계정과 인증 연결을 포함한 탈퇴 처리를 서버에 요청합니다. */
 export async function deleteAccount() {
+  if (isWorkerBackend) {
+    const error = await deleteWorkerAuthUser();
+    if (error) {
+      throw new CommunityRequestError('ACCOUNT_DELETE_FAILED', error);
+    }
+    return { deleted: true };
+  }
   return invoke('delete-account');
 }
 
 /** 방명록과 후기에서 공통으로 사용할 공개 프로필 이름을 조회합니다. */
 export async function getProfile(userId: string) {
+  if (isWorkerBackend) {
+    const { user } = await getWorkerCurrentUser();
+    if (user.id !== userId) return null;
+    const profile = await getWorkerMyProfile();
+    return { id: profile.id, display_name: profile.display_name };
+  }
   const client = requireClient();
   const { data, error } = await client
     .from('profiles')
@@ -583,5 +733,5 @@ export async function getProfile(userId: string) {
 
 /** 화면이 Supabase 사용자 기능을 제공할 수 있는 설정 상태인지 확인합니다. */
 export function communityConfigured() {
-  return Boolean(supabase);
+  return isWorkerBackend || Boolean(supabase);
 }

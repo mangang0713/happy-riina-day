@@ -4,17 +4,19 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useAuth, type SocialProvider } from '../features/auth/AuthProvider';
+import { useAuth } from '../features/auth/authContext';
+import type { SocialProvider } from '../features/auth/types';
 import {
   deleteAccount,
   getProfile,
   updateProfile,
 } from '../features/community/api';
+import { isWorkerBackend } from '../features/community/backendMode';
 import './CommunityPages.css';
 
 /** 로그인 사용자에게 프로필 편집과 계정 작업을 제공하는 계정 화면입니다. */
 function AccountPage() {
-  const { user, loading, configured, signIn, signOut } = useAuth();
+  const { user, loading, configured, providers, signIn, signOut } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [displayName, setDisplayName] = useState('');
@@ -25,19 +27,7 @@ function AccountPage() {
 
   useEffect(() => {
     if (!user) return;
-    const metadata = user.user_metadata;
-    const suggestedName =
-      [
-        metadata.user_name,
-        metadata.preferred_username,
-        metadata.full_name,
-        metadata.name,
-      ]
-        .find(
-          (value): value is string =>
-            typeof value === 'string' && value.trim().length > 0,
-        )
-        ?.trim() ?? '';
+    const suggestedName = user.suggestedName;
     getProfile(user.id)
       .then((profile) => {
         const currentName = profile?.display_name ?? suggestedName;
@@ -95,7 +85,7 @@ function AccountPage() {
     setBusy(true);
     try {
       await deleteAccount();
-      await signOut();
+      if (!isWorkerBackend) await signOut();
       navigate('/');
     } catch (error) {
       setMessage(
@@ -115,8 +105,8 @@ function AccountPage() {
       </div>
       {!configured && (
         <div className="community-alert" role="status">
-          Supabase 설정을 기다리는 중입니다. 프로젝트 설정 후 `.env.example`을
-          참고해 환경 변수를 등록해 주세요.
+          로그인 서버 설정을 기다리는 중입니다. 필요한 환경 변수를 등록해
+          주세요.
         </div>
       )}
       {loading && (
@@ -129,32 +119,31 @@ function AccountPage() {
             로그인 정보는 공개되지 않습니다. 공개 화면에는 직접 선택한 표시
             이름만 사용합니다.
           </p>
-          <div className="provider-buttons">
-            <button
-              type="button"
-              className="provider-button provider-x"
-              disabled={busy}
-              onClick={() => void handleSignIn('x')}
-            >
-              X로 계속하기
-            </button>
-            <button
-              type="button"
-              className="provider-button"
-              disabled={busy}
-              onClick={() => void handleSignIn('google')}
-            >
-              Google로 계속하기
-            </button>
-            <button
-              type="button"
-              className="provider-button"
-              disabled={busy}
-              onClick={() => void handleSignIn('kakao')}
-            >
-              Kakao로 계속하기
-            </button>
-          </div>
+          {providers === null ? (
+            <p className="community-muted">로그인 방법을 확인하고 있습니다.</p>
+          ) : providers.length ? (
+            <div className="provider-buttons">
+              {providers.map((provider) => (
+                <button
+                  key={provider}
+                  type="button"
+                  className={`provider-button${provider === 'x' ? ' provider-x' : ''}`}
+                  disabled={busy}
+                  onClick={() => void handleSignIn(provider)}
+                >
+                  {provider === 'x'
+                    ? 'X로 계속하기'
+                    : provider === 'google'
+                      ? 'Google로 계속하기'
+                      : 'Kakao로 계속하기'}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="community-muted">
+              현재 사용할 수 있는 소셜 로그인 방법이 설정되지 않았습니다.
+            </p>
+          )}
           <p className="community-small">
             X 로그인은 계정 확인용이며 X 게시물에 접근하거나 자동 수집하지
             않습니다.

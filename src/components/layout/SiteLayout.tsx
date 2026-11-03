@@ -9,7 +9,7 @@ import {
   useLocation,
   useNavigate,
 } from 'react-router-dom';
-import { useAuth } from '../../features/auth/AuthProvider';
+import { useAuth } from '../../features/auth/authContext';
 import { useEffect, useRef, useState } from 'react';
 import { getProfile } from '../../features/community/api';
 import AdminNavigationLink from './AdminNavigationLink';
@@ -27,13 +27,7 @@ function SiteLayout() {
   const profileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
-  const profileImageUrl = [
-    user?.user_metadata.avatar_url,
-    user?.user_metadata.picture,
-  ].find(
-    (value): value is string =>
-      typeof value === 'string' && value.trim().length > 0,
-  );
+  const profileImageUrl = user?.imageUrl ?? undefined;
 
   async function handleSignOut() {
     if (signingOut) return;

@@ -48,7 +48,7 @@ import {
 import { createRegionNavigationController } from './regionNavigationController';
 import { schedules } from '../../data/schedules';
 import type { CountryCode, Schedule } from '../../types/archive';
-import { useAuth } from '../../features/auth/AuthProvider';
+import { useAuth } from '../../features/auth/authContext';
 import {
   getScheduleReactions,
   toggleScheduleLike,

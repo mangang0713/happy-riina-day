@@ -9,7 +9,7 @@ import {
   useNavigate,
   useSearchParams,
 } from 'react-router-dom';
-import { useAuth } from '../features/auth/AuthProvider';
+import { useAuth } from '../features/auth/authContext';
 import { getProfile, updateProfile } from '../features/community/api';
 import './CommunityPages.css';
 
@@ -23,20 +23,6 @@ function safeNextPath(value: string | null) {
     return '/guestbook';
   }
   return value;
-}
-
-function suggestedName(userMetadata: Record<string, unknown>) {
-  const candidate = [
-    userMetadata.user_name,
-    userMetadata.preferred_username,
-    userMetadata.nickname,
-    userMetadata.full_name,
-    userMetadata.name,
-  ].find(
-    (value): value is string =>
-      typeof value === 'string' && value.trim().length > 0,
-  );
-  return candidate?.trim().slice(0, 40) ?? '';
 }
 
 /** 공개 표시 이름이 없는 계정을 커뮤니티 작성이 가능한 상태로 설정합니다. */
@@ -63,14 +49,14 @@ function ProfileSetupPage() {
           return;
         }
         setDisplayName(
-          suggestedName(user.user_metadata) ||
+          user.suggestedName.slice(0, 40) ||
             (savedName === 'H1-KEY 팬' ? '' : savedName),
         );
         setChecking(false);
       })
       .catch((error: unknown) => {
         if (!active) return;
-        setDisplayName(suggestedName(user.user_metadata));
+        setDisplayName(user.suggestedName.slice(0, 40));
         setMessage(
           error instanceof Error
             ? error.message

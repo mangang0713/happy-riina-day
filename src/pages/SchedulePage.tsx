@@ -15,7 +15,7 @@ import { locations } from '../data/locations';
 import { schedules } from '../data/schedules';
 import { songs } from '../data/songs';
 import { getSongPerformanceNumber } from '../data/songStats';
-import { useAuth } from '../features/auth/AuthProvider';
+import { useAuth } from '../features/auth/authContext';
 import {
   acceptCommunityTerms,
   deleteCommunityContent,
