@@ -22,6 +22,9 @@ function createProfileTestApp(options?: { limitReached?: boolean }) {
     if (sql.includes('community_terms_accepted_at = now()')) {
       return { rows: [{ id: values[0] }] };
     }
+    if (sql.includes('exists(select 1 from admin_members')) {
+      return { rows: [{ is_admin: true }] };
+    }
     if (sql.includes('from profiles') && sql.includes('where id = $1')) {
       return { rows: [profile] };
     }
@@ -60,6 +63,30 @@ describe('signed-in profile and community consent routes', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(profile);
+  });
+
+  it('returns only the current account admin flag for navigation', async () => {
+    const { app, env, query } = createProfileTestApp();
+    const response = await app.request(
+      '/api/v1/me/admin-status',
+      { headers: { Cookie: 'session=qa' } },
+      env,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ isAdmin: true });
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('admin_members'),
+      ['qa-user-id'],
+    );
+
+    const anonymous = createProfileTestApp();
+    const anonymousResponse = await anonymous.app.request(
+      '/api/v1/me/admin-status',
+      {},
+      anonymous.env,
+    );
+    expect(anonymousResponse.status).toBe(401);
   });
 
   it('normalizes and saves the public display name', async () => {

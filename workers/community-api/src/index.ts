@@ -74,6 +74,7 @@ export function createWorkerApp(overrides: Partial<WorkerServices> = {}) {
   app.use('/api/auth/*', attachDatabase);
   app.use('/api/v1/me', attachDatabase);
   app.use('/api/v1/me/*', attachDatabase);
+  app.use('/api/v1/settings', attachDatabase);
   app.use('/api/v1/guestbook', attachDatabase);
   app.use('/api/v1/guestbook/*', attachDatabase);
   app.use('/api/v1/schedules/*', attachDatabase);

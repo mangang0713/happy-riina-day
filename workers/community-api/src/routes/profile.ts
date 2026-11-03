@@ -173,6 +173,19 @@ export function createProfileRoutes(services: ProfileRouteServices) {
     }
   });
 
+  // 메뉴 표시용 권한 정보만 돌려줍니다. 관리자 API는 개별 요청에서도 다시 검사합니다.
+  routes.get('/me/admin-status', async (context) => {
+    try {
+      const userId = requireUser(context);
+      const { rows } = await context.get('database').query<{
+        is_admin: boolean;
+      }>('select exists(select 1 from admin_members where user_id = $1) as is_admin', [userId]);
+      return context.json({ isAdmin: Boolean(rows[0]?.is_admin) });
+    } catch (error) {
+      return respondError(context, error);
+    }
+  });
+
   // 닉네임은 한글 등 Unicode 글자 수를 기준으로 제한하고 시간당 변경 횟수를 둡니다.
   routes.patch('/me/profile', async (context) => {
     try {

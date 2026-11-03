@@ -174,6 +174,41 @@ export function createCommunityRoutes(services: CommunityRouteServices) {
     return userId;
   }
 
+  // 작성 폼은 공개 상태 토글만 확인할 수 있고 내부 사용량이나 관리자 설정은 받지 않습니다.
+  community.get('/settings', async (c) => {
+    try {
+      const { rows } = await queryDatabase<{
+        community_enabled: boolean;
+        uploads_enabled: boolean;
+        media_views_enabled: boolean;
+      }>(
+        c.get('database'),
+        `select community_enabled, uploads_enabled, media_views_enabled
+         from community_settings where id = true limit 1`,
+      );
+      const settings = rows[0];
+      if (!settings) {
+        throw new ApiError(
+          503,
+          'SETTINGS_UNAVAILABLE',
+          '커뮤니티 설정을 불러오지 못했습니다.',
+        );
+      }
+      return c.json(settings);
+    } catch (error) {
+      return respondError(
+        c,
+        error instanceof ApiError
+          ? error
+          : new ApiError(
+              503,
+              'SETTINGS_UNAVAILABLE',
+              '커뮤니티 설정을 불러오지 못했습니다.',
+            ),
+      );
+    }
+  });
+
   async function parseRequestBody(c: CommunityContext) {
     try {
       const body: unknown = await c.req.json();
