@@ -137,3 +137,57 @@
 - 현재 변경은 로컬 파일럿에 한정됩니다. Supabase, 프런트엔드, 실제 R2 버킷, OAuth provider 설정 또는 원격 배포에는 연결하지 않았습니다. 관리자 계정은 별도 통제된 DB 운영 절차로만 등록해야 합니다.
 - 공개 목록 경로는 기존 UI와 같은 `is_mine` boolean 및 media 배열을 반환하도록 맞췄습니다. `media[].signed_url`에는 보호된 Worker 미디어 경로가 들어가며, 실제 R2 파일은 매 요청에서 게시물 상태·신고자·관리자 권한을 다시 확인한 뒤 전달합니다. Supabase 서명 URL과는 수명·접근 방식이 다릅니다.
 - 프런트엔드용 typed Worker client의 공개 목록 메서드와 오류 변환기를 추가했지만 아직 React 페이지에 연결하지 않았습니다. 소셜 로그인·세션이 Supabase와 Worker 사이에 공유되지 않기 때문에, 실제 목록 전환은 로그인 세션과 쓰기 경로를 함께 준비한 뒤 진행합니다.
+
+### 읽기 API client 범위 확장
+
+- 후속 단계에서 같은 client에 로그인 사용자 확인, 본인 프로필, 일정 좋아요 요약·본인 후기, 내 게시글·이의제기 결과, 관리자 신고·숨김 목록과 운영 설정 조회를 추가했습니다. 본인 후기의 보호된 미디어 URL도 기존 화면 타입의 `signed_url` 필드로 정규화합니다.
+- 이 함수들은 API 계약을 분리해 둔 것으로, 기존 React 화면을 Worker로 바꾸지 않습니다. 현재 인증 세션은 계속 Supabase가 관리하고 Worker의 Better Auth 쿠키와 공유되지 않습니다. 따라서 로그인이나 글쓰기 전환은 별도의 인증·쓰기 설계와 QA 뒤에 진행해야 합니다.
+
+### 사용자 쓰기 API client 준비
+
+- 방명록·후기 생성과 수정, 파일 업로드, 공개 콘텐츠·사진 삭제, 좋아요 전환, 공개 안내 동의 기록을 Worker endpoint로 보내는 typed 함수를 추가했습니다. JSON 요청은 same-origin cookie와 `{ code, error }` 처리기를 공유하고, 사진은 multipart boundary를 브라우저가 설정하도록 FormData로 보냅니다.
+- 글쓰기·사진 업로드에는 Turnstile 토큰이 필요하도록 함수 인자에도 명시했습니다. 파일 크기·실제 형식·계정별/전체 용량·작성자 권한은 서버에서 다시 검증하며 브라우저 함수는 보안 경계가 아닙니다.
+- 이 단계는 API 호출 계약만 준비했습니다. 기존 React 작성 폼은 계속 Supabase를 쓰고, Worker에 보내는 사진의 브라우저 압축과 글 작성 후 사진 업로드 실패 복구 흐름은 화면을 연결할 때 따로 맞춰야 합니다.
+
+### 신고·조정 API client 준비
+
+- 공개 글 신고와 추가 설명, 작성자 이의제기, 관리자 신고 기각·사유 숨김, 직접 숨김·복원, 이의제기 승인·기각 요청을 typed client로 연결했습니다.
+- 기각 사유나 숨김 사유가 필요한 조건은 API 함수 인자와 서버 검증 양쪽에 남겨 두었습니다. 관리자 권한·게시물 공개 상태·7일 보존 기한·복원 또는 최종 삭제는 서버가 판정합니다.
+- 이 client도 아직 페이지에서 호출하지 않습니다. Supabase 로그인은 Worker의 Better Auth 세션을 만들지 않으므로, 실제 UI 전환은 로그인 이전과 요청 실패·복구 UX를 함께 검증한 뒤 진행해야 합니다.
+
+### 화면 인증 모델과 Supabase SDK 분리
+
+- 화면이 Supabase SDK의 `User` 객체를 직접 읽던 경계를 `AuthUser`로 바꿨습니다. 계정·프로필 설정·헤더는 이제 계정 ID, 표시 이름 제안, 이메일, 프로필 이미지라는 앱 수준 정보만 소비합니다.
+- 현재 인증 공급자는 여전히 Supabase이며 로그인, 로그아웃, 세션 구독 방식은 변경하지 않았습니다. Supabase 메타데이터를 `AuthUser`로 바꾸는 작업만 `AuthProvider` 안에 두어 향후 Better Auth 세션 어댑터를 추가할 위치를 명확히 했습니다.
+- 아직 Better Auth 로그인을 켜거나 Worker API를 화면에 연결하지 않았습니다. 따라서 이 변경은 인증 이전의 준비 단계이며 운영 로그인·게시물·사진 흐름에는 영향이 없습니다.
+
+### Better Auth 브라우저 client 준비
+
+- React용 Better Auth client를 `src/features/auth/workerAuthClient.ts`에 격리했습니다. 현재 Worker와 같은 출처에서 세션 확인, 로그아웃, X·Google·Kakao OAuth 시작 요청을 보낼 수 있습니다. Better Auth의 React client와 `useSession` 패턴은 공식 client 문서를 기준으로 했습니다.
+- UI에서 쓰는 `x`를 Better Auth의 `twitter` provider 키로 바꾸고, 콜백 주소가 현재 사이트와 다른 출처로 빠지지 않도록 제한했습니다.
+- 이 client는 아직 `AuthProvider`나 로그인 버튼에서 호출되지 않습니다. Supabase 세션과 Worker 세션은 별개이므로, 두 인증 흐름을 화면에 동시에 켜면 커뮤니티 요청의 인증이 어긋날 수 있습니다. 로그인과 커뮤니티 API를 함께 전환하는 별도 단계 전까지 기존 사이트 동작은 Supabase에 남겨 둡니다.
+
+## 2026-11-02 로컬 Worker 화면 연결
+
+- `worker:dev`와 `worker:assets`는 Vite `worker` 모드로 빌드합니다. 이 모드에서만 React 인증 context가 Better Auth 쿠키를 사용하고, 방명록·후기·사진·프로필·관리·이의제기 API가 Worker typed client로 연결됩니다. 기본 production/GitHub Pages 빌드는 계속 Supabase를 사용합니다.
+- Worker 빌드에서는 브라우저 Supabase SDK를 대체 모듈로 빼고, Supabase endpoint나 SDK가 Worker 정적 asset에 포함되지 않는 것을 확인했습니다.
+- 화면 연결에 필요한 공개 기능 스위치 `GET /api/v1/settings`와 메뉴 표시용 최소 관리자 상태 `GET /api/v1/me/admin-status`를 추가했습니다. 관리자 권한을 실제로 바꾸는 작업은 여전히 서버에서 각 관리자 요청마다 검증합니다.
+- `npm run build`, `npm run lint`, `npm run format:check`, Worker 타입 검사, Worker dry-run build를 통과했습니다. Worker 테스트는 33개 통과했고 Docker 기반 DB 통합 테스트 3개는 Docker daemon이 열리지 않아 건너뛰었습니다.
+- Wrangler 로컬 서버에서 `/health`, `/api/health`, `/api/v1/providers`, `/`, `/guestbook`, 일정 상세 SPA 경로가 200을 반환하는 것을 확인했습니다. `/api/v1/settings`는 PostgreSQL이 준비되지 않아 예상된 503 `DATABASE_UNAVAILABLE`을 반환했습니다.
+- 로컬 `.dev.vars`와 OAuth provider 자격 증명이 없어 실제 X·Google·Kakao callback은 아직 시험하지 않았습니다. Neon, 실 R2, 사용자 데이터 이전, 공개 배포는 하지 않았으며 GitHub Pages는 계속 Supabase를 사용합니다.
+
+## 2026-11-02 로컬 PostgreSQL 복구 및 통합 QA
+
+앞선 화면 연결 기록은 Docker 엔진이 내려가 있어 DB 기반 테스트 3개를 건너뛰고 설정 조회가 503이던 시점의 결과를 보존한다. 이후 WSL 업데이트를 마치고 Rancher Desktop의 Docker 엔진을 복구해 로컬 검증을 이어갔다.
+
+- 기존 Docker 컨테이너·볼륨을 확인하고 PostgreSQL을 healthy 상태로 시작했다. 기존 데이터 볼륨은 삭제하지 않았으며, 로컬 DB에 세 개의 마이그레이션을 적용했다.
+- `WORKER_TEST_DATABASE_URL`은 테스트 프로세스 범위에서만 설정했다. Worker DB 통합 테스트 36개가 모두 통과했다. 테스트 전후의 users, admins, profiles, guestbook_posts, schedule_reviews, community_media, media_quota_reservations, community_rate_limits 테이블은 비어 있었고, 테스트가 만든 QA 데이터가 남지 않은 것을 확인했다.
+- `npm run build`, `npm run lint`, `npm run worker:typecheck`, `npm run format:check`, `git diff --check`가 통과했다. Worker smoke test는 `/health`, `/api/health`, `/api/v1/providers`, `/api/v1/settings`, 공개 방명록·후기 조회와 주요 SPA 경로에서 HTTP 200을, 비로그인 내 정보·프로필·관리자 경로에서 HTTP 401을 반환했다.
+- 실제 X·Google·Kakao OAuth callback 및 실제 Turnstile Siteverify는 아직 실행하지 않았다. 로컬 OAuth provider 자격 증명과 `TURNSTILE_SECRET_KEY`가 비어 있기 때문이다. 실제 R2 대신 테스트 대체물을 사용했고, Neon 연결·원격 배포·Supabase 데이터 이전은 하지 않았다.
+- Docker PostgreSQL 컨테이너와 기존 볼륨은 검증 뒤에도 유지되어 있다. 검증은 로컬 파일럿에 한정하며 운영 Supabase, GitHub Pages, 공개 사용자 데이터에는 변경을 가하지 않았다.
+
+### 다음 단계
+
+1. 로컬 `.dev.vars`에 OAuth와 Turnstile 비밀값을 직접 설정한 뒤 Better Auth의 X·Google·Kakao callback과 실제 Turnstile 실패·성공 흐름을 브라우저에서 확인한다. 비밀값은 로그나 문서에 기록하지 않는다.
+2. 실제 OAuth 로그인이 준비되면 Worker 모드에서 프로필, 방명록·후기, 사진, 신고·이의제기·관리 흐름을 전용 로컬 QA 계정으로 확인한다.
+3. 로컬 사용자 흐름이 안정화된 후에만 Neon Hyperdrive와 R2를 연결하는 격리된 스테이징을 설계하고, 반복 이관·복구 절차를 검토한다. 공개 서비스 전환은 별도 승인과 QA 이후 단계로 남긴다.

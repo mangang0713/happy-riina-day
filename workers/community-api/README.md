@@ -25,7 +25,7 @@ Docker 데이터는 `community-postgres-data` 로컬 볼륨에 남습니다. `np
 - `GET /api/v1/schedules/:scheduleId/reactions`: 공개 좋아요 수와 로그인 사용자의 좋아요 여부·공개 후기 ID를 반환
 - `GET /api/v1/schedules/:scheduleId/reviews/own`: 로그인한 작성자의 공개 후기와 Worker 미디어 경로를 반환. 숨김 후기는 일정 화면에 노출하지 않음
 - `GET /api/v1/guestbook` 및 일정 후기 조회: 공개 글을 기존 화면과 같은 배열·미디어 필드로 반환. `signed_url`은 매 요청마다 권한을 확인하는 Worker 사진 경로이며 Supabase 서명 URL과는 다름
-- `src/features/community/workerApi.ts`: same-origin cookie와 Worker 오류 형식을 처리하는 typed 공개 목록 client. 현재 React 화면에서는 아직 호출하지 않음
+- `src/features/community/workerApi.ts`, `workerCommunityWrites.ts`, `workerModerationWrites.ts`: same-origin cookie와 Worker 오류 형식을 처리하는 typed client. 공개 방명록·후기, 프로필·반응·내 게시글·관리자 조회와 글·후기 저장, 사진 업로드·삭제, 좋아요·약관 동의, 신고·이의제기·관리자 숨김·복원을 지원합니다. `worker:dev`의 Worker 모드 화면에서 사용하며 GitHub Pages 기본 빌드는 기존 Supabase client를 계속 사용합니다.
 - `POST /api/v1/guestbook`: 로그인, 최신 공개 안내 동의, Turnstile, 시간당 10회 작성 제한을 확인한 뒤 방명록 작성
 - `PUT /api/v1/guestbook/:postId`: 같은 검증과 시간당 8회 수정 제한을 적용하고, 작성자 본인의 공개 글만 수정
 - `POST /api/v1/schedules/:scheduleId/reviews` 및 `PUT` 수정 경로: 별점 1~5점, 일정당 사용자 후기 1개, 시간당 저장 5회와 작성자 권한 검사
@@ -41,7 +41,7 @@ Docker 데이터는 `community-postgres-data` 로컬 볼륨에 남습니다. `np
 - `POST /api/auth/delete-user`: Better Auth의 최근 로그인 확인(기본 24시간 이내)을 거쳐 계정을 삭제합니다. 삭제 전 방명록·후기는 `익명 사용자`로 보존하고, 좋아요·작성자 이의제기·계정 소유 사진·진행 중 사진 예약을 지우며 저장량을 정산합니다. Better Auth가 소셜 계정·세션·프로필·관리자 권한을 제거하고, 신고 기록은 신고자 계정 연결을 끊어 보존합니다.
 - `migrations/0001_better_auth.sql`~`0003_media_upload_reservations.sql`: 로컬 파일럿용 PostgreSQL 스키마 및 업로드 예약 필드
 
-신고·관리·이의제기·7일 만료 정리·계정 삭제까지 로컬 Worker 파일럿에 구현되어 있습니다. 다만 Cloudflare R2 실제 버킷 연결, 브라우저 프런트엔드 연결, 기존 사용자·콘텐츠 이전은 아직 하지 않았습니다. 기존 페이지와 운영 사용자 데이터는 변경되지 않았습니다.
+신고·관리·이의제기·7일 만료 정리·계정 삭제까지 로컬 Worker 파일럿에 구현되어 있습니다. 브라우저 화면은 Worker 빌드 모드에서 로컬 API를 사용하도록 연결했지만 실제 OAuth 자격 증명·Neon Hyperdrive·Cloudflare R2 연결과 기존 사용자·콘텐츠 이전은 하지 않았습니다. GitHub Pages 공개 화면과 Supabase 운영 데이터는 변경하지 않았습니다.
 
 업로드는 먼저 PostgreSQL 트랜잭션으로 계정·전체 사용량을 잠그고 10분간 용량을 예약합니다. 파일 저장 또는 DB 확정에 실패하면 R2 객체와 예약을 정리하고, 다음 업로드 요청 시 만료된 예약도 제한된 개수씩 청소합니다. R2 파일은 공개 URL로 노출하지 않으며 Worker가 게시물 공개 상태와 신고자별 숨김 여부를 확인한 뒤 전달합니다.
 
@@ -75,9 +75,17 @@ Docker 데이터는 `community-postgres-data` 로컬 볼륨에 남습니다. `np
 - DB 연결 방식을 요청 단위로 바꾼 뒤 공개 방명록·후기 조회 200, 없는 미디어 404, 비로그인 세션 401을 각각 세 차례 반복 확인했습니다.
 - 방명록·후기 작성/수정과 좋아요 전환은 주입형 테스트와 격리된 로컬 PostgreSQL 통합 테스트로 저장·수정·중복 방지·소유권·사용량 제한을 확인했습니다. 사진 업로드·전달·삭제는 로컬 PostgreSQL과 메모리 R2 대체물로 파일 형식, 비공개 접근, 권한, 사용량 정산을 확인했습니다. 신고·숨김·복원·이의제기와 계정 삭제는 합성 QA 계정 통합 테스트로 권한, 자동 복원, 기각 후 삭제·사유 보존, 만료 purge, 글 익명화, 좋아요·사진·예약·소셜 계정·세션·관리자 권한 정리를 확인했습니다. 실제 Cloudflare Siteverify와 실제 R2 binding은 아직 미검증입니다.
 - Better Auth 메모리 어댑터와 가짜 client 설정으로 Google/X/Kakao 승인 URL, 동일 출처 callback URL과 X의 `users.read` 전용 scope 생성 테스트를 통과했습니다. provider로 실제 네트워크 요청을 하거나 로그인 callback을 처리하지는 않았습니다. OAuth client 자격 증명이 로컬에 설정되지 않아 실제 로그인을 검증하지 않았습니다.
-- 관리자 설정 경로는 이번 변경에서 추가했으며 Worker 타입 검사·린트·프런트엔드 빌드만 확인했습니다. 실제 HTTP 요청과 DB 쓰기 동작은 로컬에서 별도 검증하지 않았습니다.
-- 프런트엔드 Supabase RPC/action과 Worker REST API의 계약을 대조했습니다. 공개 방명록·후기 목록은 기존 화면이 읽는 배열과 `media[].signed_url` 모양에 맞췄습니다. Worker URL은 매 요청마다 게시물 권한을 확인하는 경로이므로 Supabase 서명 URL과 구현 방식은 다릅니다. 쓰기 경로, 액션 이름, 사진 업로드 방식은 여전히 다르며 브라우저 API client 전환은 미완료입니다.
+- 관리자 설정 경로는 실제 로컬 PostgreSQL에 연결된 상태에서 HTTP 조회와 쓰기 통합 테스트를 통과했습니다. 로컬 smoke test에서 설정 조회는 200, 비로그인 프로필·관리자 경로는 401을 반환했습니다.
+- 프런트엔드 Supabase RPC/action과 Worker REST API의 계약을 대조했습니다. 공개 방명록·후기 목록은 기존 화면이 읽는 배열과 `media[].signed_url` 모양에 맞췄습니다. Worker URL은 매 요청마다 게시물 권한을 확인하는 경로이므로 Supabase 서명 URL과 구현 방식은 다릅니다. 화면은 Worker 모드에서 Worker API client로 연결되고, GitHub Pages 기본 빌드에서는 Supabase client를 사용합니다.
 - Neon Hyperdrive와 실제 Cloudflare R2 연결은 미검증입니다.
-- 기존 프런트엔드와 공개 서비스는 여전히 Supabase를 사용합니다. Worker의 커뮤니티 기능과 Better Auth 계정 삭제는 로컬 파일럿에만 있고 브라우저와 연결하거나 실제 배포하지 않았습니다. OAuth callback, 실제 R2와 계정·콘텐츠 이전도 미완료입니다.
+- GitHub Pages 공개 서비스와 기존 사용자 데이터는 계속 Supabase를 사용합니다. 로컬 Worker 모드에만 화면을 연결했으며 Worker를 원격 배포하거나 기존 계정·콘텐츠를 이전하지 않았습니다. 실제 OAuth callback과 Cloudflare Siteverify, Neon Hyperdrive, R2 연결도 미검증입니다.
+
+### 2026-11-02 로컬 PostgreSQL 통합 검증
+
+- WSL 업데이트 후 Rancher Desktop의 Docker 엔진을 복구했습니다. 기존 로컬 PostgreSQL 볼륨은 보존했고 컨테이너가 healthy 상태인 것을 확인했습니다.
+- 세 개의 로컬 SQL 마이그레이션을 적용한 뒤 `WORKER_TEST_DATABASE_URL`을 테스트 프로세스에만 전달해 Worker DB 통합 테스트를 실행했습니다. 36개 테스트가 모두 통과했고, 테스트 전후에 사용자·관리자·프로필·방명록·후기·미디어·업로드 예약·요청 제한 데이터가 비어 있어 테스트 자료가 정리된 것을 확인했습니다.
+- `npm run build`, `npm run lint`, `npm run worker:typecheck`, `npm run format:check`, `git diff --check`가 통과했습니다. 로컬 Worker smoke test에서 `/health`, `/api/health`, `/api/v1/providers`, `/api/v1/settings`, 공개 글 목록과 주요 SPA 경로는 HTTP 200, 비로그인 `/api/v1/me`, 프로필·관리자 경로는 HTTP 401을 반환했습니다.
+- 로컬 OAuth provider 키와 `TURNSTILE_SECRET_KEY`가 비어 있어 X·Google·Kakao의 실제 로그인 callback과 실제 Cloudflare Siteverify 글쓰기는 확인하지 않았습니다. 인증·봇 검증 우회는 추가하지 않았습니다. 실제 R2 대신 테스트 대체물을 사용했으며 Neon, 원격 배포, Supabase 데이터 이전은 하지 않았습니다.
+- PostgreSQL 컨테이너와 데이터 볼륨은 검증 후에도 유지되어 있습니다. 로컬 사용을 마친 뒤 `npm run worker:db:down`으로 컨테이너를 종료할 수 있으며, 이 명령은 볼륨을 삭제하지 않습니다.
 
 관리자 설정 경로는 `admin_members`에 등록된 계정만 사용할 수 있습니다. 관리자 등록·해제 API는 권한 상승을 막기 위해 제공하지 않으며 파일럿 DB에서 별도 통제 절차로 관리해야 합니다. 전송량 경고·중단 수치는 운영 기준값이며 Worker가 계정 전체의 실제 전송량을 측정한다는 의미는 아닙니다.

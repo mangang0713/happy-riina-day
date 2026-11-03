@@ -200,7 +200,7 @@ Supabase 프로젝트에 DB 마이그레이션과 `community-api` Edge Function�
 
 ### 자체 백엔드 학습 파일럿
 
-Supabase 의존도를 줄이는 방법을 학습하기 위해 `workers/community-api/`에 Hono·Cloudflare Workers API와 Better Auth, PostgreSQL 기반 로컬 파일럿을 별도로 구성했습니다. 공개 사이트와 사용자 데이터는 계속 Supabase를 사용합니다. 파일럿은 아직 브라우저 화면이나 운영 DB·Storage에 연결되지 않았고 배포하지 않았습니다. 프런트엔드에는 공개 목록을 읽는 typed API 클라이언트만 준비되어 있으며 React 화면에서는 호출하지 않습니다.
+Supabase 의존도를 줄이는 방법을 학습하기 위해 `workers/community-api/`에 Hono·Cloudflare Workers API와 Better Auth, PostgreSQL 기반 로컬 파일럿을 별도로 구성했습니다. 일반 GitHub Pages 빌드와 공개 운영은 계속 Supabase를 사용하고, `npm run worker:dev`로 실행하는 Worker 빌드에서만 Better Auth와 Worker 커뮤니티 API를 화면에 연결합니다. 로컬 PostgreSQL 통합 테스트 36개가 통과했으며, 실제 OAuth 로그인과 Cloudflare Turnstile 검증은 로컬 비밀값이 준비되지 않아 아직 확인하지 않았습니다. 파일럿은 Neon·실제 R2·기존 데이터에 연결하거나 배포하지 않았습니다.
 
 로컬 DB와 Worker 실행 방법, API·보안 경계 및 미완료 항목은 [Worker 파일럿 안내](workers/community-api/README.md)와 [백엔드 이전 현황 및 파일럿 기록](docs/backend-migration/current-state-and-pilot.md)을 참고하세요.
 
