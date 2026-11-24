@@ -101,7 +101,7 @@ function AccountPage() {
       <div className="community-heading">
         <span className="community-eyebrow">ACCOUNT</span>
         <h1>계정</h1>
-        <p>기록을 남기거나 반응을 표시하려면 로그인해 주세요.</p>
+        <p>공개 표시 이름과 로그인 계정 설정을 관리할 수 있습니다.</p>
       </div>
       {!configured && (
         <div className="community-alert" role="status">
