@@ -755,5 +755,33 @@ export const locations: Location[] = [
       128.034831,
       35.156208
     ]
+  },
+  {
+    "id": "venue-085",
+    "name": "SBS 프리즘타워",
+    "address": "서울특별시 마포구 상암산로 82",
+    "coordinates": [
+      126.8928442,
+      37.5796932
+    ]
+  },
+  {
+    "id": "venue-086",
+    "name": "엘리에나호텔",
+    "address": "서울특별시 강남구 논현로 645",
+    "coordinates": [
+      127.0317674,
+      37.5112745
+    ]
+  },
+  {
+    "id": "venue-087",
+    "name": "무앙보란 (Ancient City)",
+    "countryCode": "TH",
+    "address": "296/1 Sukhumvit Road, Bang Pu Mai, Mueang Samut Prakan, Samut Prakan 10280, Thailand",
+    "coordinates": [
+      100.62307119,
+      13.53938842
+    ]
   }
 ]

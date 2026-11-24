@@ -1533,6 +1533,117 @@ export const schedules: Schedule[] = [
       "good-for-u",
       "world-is-not-like-a-movie"
     ]
+  },
+  {
+    "id": "schedule-2026-11-11-01",
+    "locationId": "venue-087",
+    "eventFormat": "in-person",
+    "title": "GoodRich Summer Festival",
+    "date": "2026-11-11",
+    "setlistStatus": "unknown",
+    "setlist": []
+  },
+  {
+    "id": "schedule-2026-11-13-01",
+    "locationId": "venue-005",
+    "eventFormat": "in-person",
+    "title": "KBS2 뮤직뱅크",
+    "date": "2026-11-13",
+    "startTime": "17:10",
+    "setlistStatus": "unknown",
+    "setlist": []
+  },
+  {
+    "id": "schedule-2026-11-15-01",
+    "locationId": "venue-007",
+    "eventFormat": "in-person",
+    "title": "SBS 인기가요",
+    "date": "2026-11-15",
+    "startTime": "15:20",
+    "setlistStatus": "unknown",
+    "setlist": []
+  },
+  {
+    "id": "schedule-2026-11-16-01",
+    "locationId": "venue-019",
+    "eventFormat": "in-person",
+    "title": "arirang TV 쇼케이팝 (SHOW K-POP)",
+    "date": "2026-11-16",
+    "startTime": "18:00",
+    "setlistStatus": "unknown",
+    "setlist": []
+  },
+  {
+    "id": "schedule-2026-11-17-01",
+    "locationId": "venue-085",
+    "eventFormat": "in-person",
+    "title": "SBS Life 더쇼",
+    "date": "2026-11-17",
+    "startTime": "18:00",
+    "setlistStatus": "unknown",
+    "setlist": []
+  },
+  {
+    "id": "schedule-2026-11-20-01",
+    "locationId": "venue-005",
+    "eventFormat": "in-person",
+    "title": "KBS2 뮤직뱅크",
+    "date": "2026-11-20",
+    "startTime": "17:10",
+    "setlistStatus": "unknown",
+    "setlist": []
+  },
+  {
+    "id": "schedule-2026-11-21-01",
+    "locationId": "venue-006",
+    "eventFormat": "in-person",
+    "title": "MBC 쇼! 음악중심",
+    "date": "2026-11-21",
+    "startTime": "15:20",
+    "setlistStatus": "unknown",
+    "setlist": []
+  },
+  {
+    "id": "schedule-2026-11-22-01",
+    "locationId": "venue-007",
+    "eventFormat": "in-person",
+    "title": "SBS 인기가요",
+    "date": "2026-11-22",
+    "startTime": "14:05",
+    "setlistStatus": "unknown",
+    "setlist": []
+  },
+  {
+    "id": "schedule-2026-11-23-01",
+    "locationId": "venue-019",
+    "eventFormat": "in-person",
+    "title": "arirang TV 쇼케이팝 (SHOW K-POP)",
+    "date": "2026-11-23",
+    "startTime": "18:00",
+    "orderInDay": 1,
+    "setlistStatus": "unknown",
+    "setlist": []
+  },
+  {
+    "id": "schedule-2026-11-23-02",
+    "locationId": "venue-006",
+    "eventFormat": "in-person",
+    "title": "MBC FM4U 제로베이스원의 친한친구",
+    "date": "2026-11-23",
+    "startTime": "22:00",
+    "orderInDay": 2,
+    "setlistStatus": "unknown",
+    "setlist": []
+  },
+  {
+    "id": "schedule-2026-11-24-01",
+    "locationId": "venue-086",
+    "eventFormat": "in-person",
+    "title": "2026 대한민국문화연예대상",
+    "date": "2026-11-24",
+    "startTime": "15:00",
+    "setlistStatus": "unknown",
+    "setlist": []
   }
 ]
 
