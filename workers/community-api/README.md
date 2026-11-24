@@ -94,7 +94,8 @@ Docker 데이터는 `community-postgres-data` 로컬 볼륨에 남습니다. `np
 - `npm run worker:test`에서 33개 테스트가 통과했고, Docker 엔진이 꺼져 있어 실제 PostgreSQL 연결을 요구하는 3개 테스트는 건너뛰었습니다. 이는 2026-11-02에 수행한 전체 PostgreSQL 통합 검증 결과를 대체하지 않습니다.
 - Rancher Desktop을 업데이트·재시작해 로컬 PostgreSQL 컨테이너가 healthy 상태인 것을 확인한 뒤 테스트를 재실행했습니다. 이번에는 DB 통합 테스트를 포함한 36개가 모두 통과했습니다. 통합 테스트별 정리 훅도 오류 없이 완료됐습니다.
 - `npm run worker:build`의 타입 검사와 Wrangler 배포 dry-run이 통과했습니다. 임시 로컬 Worker smoke test에서 `/health`, `/api/health`, `/api/v1/providers`, `/archive`, 일정 상세 경로는 HTTP 200을 반환했습니다. `/api/v1/settings`는 라우팅되어 Worker에 도달했지만 DB가 실행 중이지 않아 `503 DATABASE_UNAVAILABLE`을 반환했습니다.
+- Docker와 PostgreSQL을 다시 시작한 뒤 동일한 smoke test를 실행했습니다. `/health`, `/api/health`, `/api/v1/providers`, `/api/v1/settings`가 모두 HTTP 200을 반환했고, 공개 설정에는 커뮤니티 작성·업로드·사진 보기 토글만 포함됨을 확인했습니다. 로컬 Worker 프로세스는 확인 후 종료했습니다.
 - 별도 로컬 브라우저 QA에서는 Google OAuth 로그인 복귀와 로그인 세션, 방명록·후기 작성 흐름을 확인했습니다. X·Kakao 로그인은 아직 실제 callback까지 확인하지 않았고, Turnstile 위젯은 화면에 나타나지 않아 Siteverify 성공을 확인하지 못했습니다.
-- GitHub Pages와 Supabase 운영 서비스에는 배포하지 않았고, DB 마이그레이션·사용자 데이터 변경도 없습니다. Docker를 다시 실행한 뒤 건너뛴 DB 통합 테스트를 재확인해야 합니다.
+- GitHub Pages와 Supabase 운영 서비스에는 배포하지 않았고, DB 마이그레이션·운영 사용자 데이터 변경도 없습니다. 기존 Worker PostgreSQL 볼륨과 컨테이너는 로컬에서 healthy 상태로 유지되어 있습니다.
 
 관리자 설정 경로는 `admin_members`에 등록된 계정만 사용할 수 있습니다. 관리자 등록·해제 API는 권한 상승을 막기 위해 제공하지 않으며 파일럿 DB에서 별도 통제 절차로 관리해야 합니다. 전송량 경고·중단 수치는 운영 기준값이며 Worker가 계정 전체의 실제 전송량을 측정한다는 의미는 아닙니다.
