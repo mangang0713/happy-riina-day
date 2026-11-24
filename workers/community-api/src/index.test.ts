@@ -70,9 +70,8 @@ describe('Worker public routes', () => {
 });
 
 describe('social login data minimization', () => {
-  it('does not request X posts, email, or offline access', () => {
-    expect(SOCIAL_PROVIDER_SCOPES.x).toEqual(['users.read']);
-    expect(SOCIAL_PROVIDER_SCOPES.x).not.toContain('tweet.read');
+  it('requests X profile scopes but avoids email and offline access', () => {
+    expect(SOCIAL_PROVIDER_SCOPES.x).toEqual(['users.read', 'tweet.read']);
     expect(SOCIAL_PROVIDER_SCOPES.x).not.toContain('users.email');
     expect(SOCIAL_PROVIDER_SCOPES.x).not.toContain('offline.access');
   });

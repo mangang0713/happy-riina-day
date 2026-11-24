@@ -59,12 +59,11 @@ describe('Better Auth provider authorization URLs', () => {
     },
   );
 
-  it('requests identity-only X scopes', async () => {
+  it('requests only the X scopes required for the current-user profile endpoint', async () => {
     const authorizationUrl = await createAuthorizationUrl('twitter');
     const scopes = authorizationUrl.searchParams.get('scope')?.split(' ') ?? [];
 
-    expect(scopes).toEqual(['users.read']);
-    expect(scopes).not.toContain('tweet.read');
+    expect(scopes).toEqual(['users.read', 'tweet.read']);
     expect(scopes).not.toContain('email');
     expect(scopes).not.toContain('offline.access');
   });

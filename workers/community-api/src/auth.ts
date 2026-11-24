@@ -5,9 +5,78 @@ import type { WorkerEnv } from './env';
 
 /** 로그인에 필요한 최소 정보만 요청하도록 provider별 OAuth scope를 고정합니다. */
 export const SOCIAL_PROVIDER_SCOPES = {
-  x: ['users.read'],
+  // X의 /2/users/me OAuth 2 user-context 명세는 두 scope를 함께 요구합니다.
+  x: ['users.read', 'tweet.read'],
   kakao: ['profile_nickname', 'profile_image'],
 } as const;
+
+type XUserProfile = {
+  data: {
+    id: string;
+    name: string;
+    username: string;
+    profile_image_url?: string;
+  };
+};
+
+/** X의 현재 사용자 정보만 읽고, 실패 원인은 HTTP 상태만 로그에 남깁니다. */
+export async function getXUserInfo(accessToken?: string) {
+  if (!accessToken) {
+    console.error('[auth:x] Profile lookup skipped: access token missing.');
+    return null;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(
+      'https://api.x.com/2/users/me?user.fields=profile_image_url,username',
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(8_000),
+      },
+    );
+  } catch {
+    console.error('[auth:x] Profile lookup failed: network error or timeout.');
+    return null;
+  }
+
+  if (!response.ok) {
+    // 응답 본문에는 계정 정보가 포함될 수 있어 상태 코드만 기록합니다.
+    console.error('[auth:x] Profile lookup rejected.', {
+      status: response.status,
+    });
+    return null;
+  }
+
+  const payload = (await response.json()) as Partial<XUserProfile>;
+  const profile = payload.data;
+  if (
+    typeof profile?.id !== 'string' ||
+    typeof profile.name !== 'string' ||
+    typeof profile.username !== 'string'
+  ) {
+    console.error('[auth:x] Profile response is missing required fields.', {
+      hasData: Boolean(profile),
+      hasId: typeof profile?.id === 'string',
+      hasName: typeof profile?.name === 'string',
+      hasUsername: typeof profile?.username === 'string',
+    });
+    return null;
+  }
+
+  return {
+    data: { data: profile },
+    user: {
+      name: profile.name,
+      email: `x-${profile.id}@accounts.invalid`,
+      image:
+        typeof profile.profile_image_url === 'string'
+          ? profile.profile_image_url
+          : undefined,
+      emailVerified: false,
+    },
+  };
+}
 
 /** 현재 요청의 DB 연결을 사용하는 Better Auth 옵션을 구성합니다. */
 export function createAuthOptions(
@@ -32,61 +101,13 @@ export function createAuthOptions(
           twitter: {
             clientId: env.TWITTER_CLIENT_ID,
             clientSecret: env.TWITTER_CLIENT_SECRET,
-            // X 로그인은 계정 확인만 사용하며 게시물·이메일·장기 접근 권한은 요청하지 않습니다.
+            // 로그인은 프로필 확인만 하지만 X API가 요구하는 tweet.read scope도 요청해야 합니다.
+            // 게시물 데이터는 조회하지 않으며 이메일·장기 접근 권한은 요청하지 않습니다.
             disableDefaultScope: true,
             scope: [...SOCIAL_PROVIDER_SCOPES.x],
             // 기본 X 프로필 매핑이 이메일 API를 부르지 않도록 필요한 공개 프로필만 직접 매핑합니다.
-            getUserInfo: async (token: { accessToken?: string }) => {
-              if (!token.accessToken) return null;
-              const response = await fetch(
-                'https://api.x.com/2/users/me?user.fields=profile_image_url,username',
-                {
-                  headers: { Authorization: `Bearer ${token.accessToken}` },
-                  signal: AbortSignal.timeout(8_000),
-                },
-              );
-              if (!response.ok) return null;
-
-              const payload = (await response.json()) as {
-                data?: {
-                  id?: unknown;
-                  name?: unknown;
-                  username?: unknown;
-                  profile_image_url?: unknown;
-                };
-              };
-              const profile = payload.data;
-              if (
-                typeof profile?.id !== 'string' ||
-                typeof profile.name !== 'string' ||
-                typeof profile.username !== 'string'
-              ) {
-                return null;
-              }
-
-              return {
-                data: {
-                  data: {
-                    id: profile.id,
-                    name: profile.name,
-                    username: profile.username,
-                    profile_image_url:
-                      typeof profile.profile_image_url === 'string'
-                        ? profile.profile_image_url
-                        : undefined,
-                  },
-                },
-                user: {
-                  name: profile.name,
-                  email: `x-${profile.id}@accounts.invalid`,
-                  image:
-                    typeof profile.profile_image_url === 'string'
-                      ? profile.profile_image_url
-                      : undefined,
-                  emailVerified: false,
-                },
-              };
-            },
+            getUserInfo: async (token: { accessToken?: string }) =>
+              getXUserInfo(token.accessToken),
           },
         }
       : {}),
