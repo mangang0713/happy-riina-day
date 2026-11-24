@@ -812,6 +812,8 @@
   line-height: 1.5;
 }
 .report-confirmation {
+  /* Tailwind preflight resets margins; restore native modal dialog centering. */
+  margin: auto;
   width: min(460px, calc(100% - 32px));
   max-height: min(80vh, 640px);
   padding: 0;
