@@ -12,12 +12,10 @@ function requireClient() {
   return supabase;
 }
 
-/** 최초 관리자 연결을 위해 로그인 계정의 서버 검증을 요청합니다. */
+/** Supabase에서는 최초 관리자 연결을 요청하고, Worker에서는 수동 등록을 존중해 건너뜁니다. */
 export async function claimHessxlAdmin() {
   if (isWorkerBackend) {
-    throw new Error(
-      '관리자 계정은 Worker 데이터베이스의 제한된 운영 절차로 등록해야 합니다.',
-    );
+    return false;
   }
   const { data, error } = await requireClient().rpc('claim_hessxl_admin');
   if (error) throw new Error(error.message);
