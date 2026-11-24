@@ -54,7 +54,7 @@ Docker 데이터는 `community-postgres-data` 로컬 볼륨에 남습니다. `np
 
 ## 로그인 권한 설계
 
-- X는 `users.read`만 요청합니다. 게시물·이메일·오프라인 접근 범위는 요청하지 않습니다. 사용자 프로필은 `/2/users/me` 한 번만 조회하도록 별도 매핑했습니다.
+- X는 프로필 조회에 사용하는 `users.read`와 X OAuth 현재 사용자 프로필 API가 요구하는 `tweet.read`를 요청합니다. `tweet.read`는 동의 화면에서 게시물 읽기 범위로 안내될 수 있지만, 이 앱은 `/2/users/me`만 호출하고 게시물 API를 요청하거나 게시물을 수집하지 않습니다. 이메일과 `offline.access`는 요청하지 않습니다.
 - Kakao는 닉네임·프로필 이미지 동의 항목만 요청합니다. 이메일을 받지 않으며, 안정적인 Kakao 사용자 ID에서 `.invalid` 형식의 내부 식별용 이메일을 만듭니다.
 - 이메일이나 표시 이름을 기준으로 계정을 자동 병합하지 않습니다. 기존 계정 연결은 인증된 사용자가 명시적으로 수행하도록 설정했습니다.
 - OAuth 토큰은 Better Auth 계정 테이블에 암호화해 저장하도록 설정했습니다. 실제 Worker 비밀값은 `.dev.vars` 또는 Cloudflare Secret에만 둡니다.
@@ -74,7 +74,7 @@ Docker 데이터는 `community-postgres-data` 로컬 볼륨에 남습니다. `np
 - Docker 로컬 PostgreSQL에 세 마이그레이션을 적용해 Better Auth 4개와 커뮤니티 테이블 생성을 확인했습니다.
 - DB 연결 방식을 요청 단위로 바꾼 뒤 공개 방명록·후기 조회 200, 없는 미디어 404, 비로그인 세션 401을 각각 세 차례 반복 확인했습니다.
 - 방명록·후기 작성/수정과 좋아요 전환은 주입형 테스트와 격리된 로컬 PostgreSQL 통합 테스트로 저장·수정·중복 방지·소유권·사용량 제한을 확인했습니다. 사진 업로드·전달·삭제는 로컬 PostgreSQL과 메모리 R2 대체물로 파일 형식, 비공개 접근, 권한, 사용량 정산을 확인했습니다. 신고·숨김·복원·이의제기와 계정 삭제는 합성 QA 계정 통합 테스트로 권한, 자동 복원, 기각 후 삭제·사유 보존, 만료 purge, 글 익명화, 좋아요·사진·예약·소셜 계정·세션·관리자 권한 정리를 확인했습니다. 실제 Cloudflare Siteverify와 실제 R2 binding은 아직 미검증입니다.
-- Better Auth 메모리 어댑터와 가짜 client 설정으로 Google/X/Kakao 승인 URL, 동일 출처 callback URL과 X의 `users.read` 전용 scope 생성 테스트를 통과했습니다. provider로 실제 네트워크 요청을 하거나 로그인 callback을 처리하지는 않았습니다. OAuth client 자격 증명이 로컬에 설정되지 않아 실제 로그인을 검증하지 않았습니다.
+- Better Auth 메모리 어댑터와 가짜 client 설정으로 Google/X/Kakao 승인 URL, 동일 출처 callback URL과 X의 `users.read`·`tweet.read` scope 생성을 검사합니다. provider 네트워크 응답과 OAuth callback 검증은 별도 브라우저 QA와 구분합니다.
 - 관리자 설정 경로는 실제 로컬 PostgreSQL에 연결된 상태에서 HTTP 조회와 쓰기 통합 테스트를 통과했습니다. 로컬 smoke test에서 설정 조회는 200, 비로그인 프로필·관리자 경로는 401을 반환했습니다.
 - 프런트엔드 Supabase RPC/action과 Worker REST API의 계약을 대조했습니다. 공개 방명록·후기 목록은 기존 화면이 읽는 배열과 `media[].signed_url` 모양에 맞췄습니다. Worker URL은 매 요청마다 게시물 권한을 확인하는 경로이므로 Supabase 서명 URL과 구현 방식은 다릅니다. 화면은 Worker 모드에서 Worker API client로 연결되고, GitHub Pages 기본 빌드에서는 Supabase client를 사용합니다.
 - Neon Hyperdrive와 실제 Cloudflare R2 연결은 미검증입니다.
@@ -97,5 +97,15 @@ Docker 데이터는 `community-postgres-data` 로컬 볼륨에 남습니다. `np
 - Docker와 PostgreSQL을 다시 시작한 뒤 동일한 smoke test를 실행했습니다. `/health`, `/api/health`, `/api/v1/providers`, `/api/v1/settings`가 모두 HTTP 200을 반환했고, 공개 설정에는 커뮤니티 작성·업로드·사진 보기 토글만 포함됨을 확인했습니다. 로컬 Worker 프로세스는 확인 후 종료했습니다.
 - 별도 로컬 브라우저 QA에서는 Google OAuth 로그인 복귀와 로그인 세션, 방명록·후기 작성 흐름을 확인했습니다. 사용자는 X·Kakao 로그인이 완료됐다고 확인했습니다. Turnstile 위젯은 `appearance: 'interaction-only'`로 렌더링되어 보통은 화면에 나타나지 않고, Cloudflare가 방문자 상호작용을 요구할 때 나타납니다. Worker는 토큰 누락·무효 시 쓰기를 거절하고 서버에서 Siteverify와 hostname을 확인합니다. 따라서 Worker 모드에서 QA 글·후기가 실제 저장된 것은 유효 토큰이 통과했다는 근거로 판단합니다. 무효 토큰의 실제 브라우저 재현은 별도 확인하지 않았고, 실패 응답은 모의 응답 테스트로 검증했습니다.
 - GitHub Pages와 Supabase 운영 서비스에는 배포하지 않았고, DB 마이그레이션·운영 사용자 데이터 변경도 없습니다. 기존 Worker PostgreSQL 볼륨과 컨테이너는 로컬에서 healthy 상태로 유지되어 있습니다.
+
+### 2026-11-24 Google 계정 QA와 X OAuth 프로필 처리
+
+- Google 기존 테스트 계정으로 로컬 Worker에 로그인해 이의제기 승인 후 자동 복원, 기각 후 게시물 영구 삭제 및 작성자에게 7일간 기각 사유 표시를 확인했습니다. 두 결과가 내 게시글의 이의제기 결과 분류에 표시됩니다.
+- 일정 후기 `[QA] 일정 후기 작성·수정 흐름을 확인하기 위한 테스트입니다.`가 2026-05-02 일정 상세와 내 게시글에 표시되는 것을 확인했습니다. 좋아요는 켰다가 다시 꺼 최종 0건입니다.
+- 후기 편집 화면에서 약관 동의가 유지되는 것을 확인했습니다. 사진 선택과 후기 수정 제출은 Turnstile이 재확인을 요구해 멈췄으며, CAPTCHA는 자동으로 풀지 않았습니다. 사진 미리보기·업로드·삭제 QA는 미완료입니다. 현재 계정의 QA 자료는 로컬 DB에만 있으며 공개 Supabase 데이터는 변경하지 않았습니다.
+- X의 `/2/users/me` 요청에 사용할 프로필 매핑을 `getXUserInfo`로 분리했습니다. 응답 오류 시 토큰·본문을 로그에 남기지 않고 상태 코드와 필드 유무만 진단하도록 했습니다. X OAuth scope에는 `users.read`와 `tweet.read`가 포함됩니다. 후자는 X 동의 화면에 게시물 읽기 권한으로 표시될 수 있으나, 앱은 게시물 API를 호출하지 않고 프로필 조회만 수행합니다. 이메일과 `offline.access`는 요청하지 않습니다.
+- 검증: `npm run worker:test` 36개 통과·DB 환경변수 미설정으로 3개 DB 통합 테스트 건너뜀, `npm run worker:typecheck`, `npm run build`, `npm run lint`, `npm run format:check`, `git diff --check` 통과. 앞선 별도 PostgreSQL 통합 검증에서 36개 전체 통과한 기록은 유지합니다.
+- 기능별 커밋: [X 프로필 조회 권한 오류 처리 보강 — f7e36d9](https://github.com/mangang0713/happy-riina-day/commit/f7e36d9), [Worker 관리자 자동 등록 요청 건너뛰기 — 7137437](https://github.com/mangang0713/happy-riina-day/commit/7137437), [커뮤니티 확인 대화상자 중앙 정렬 — 14eb89c](https://github.com/mangang0713/happy-riina-day/commit/14eb89c). 세 커밋은 `codex/backend-workers-migration`에 푸시했으며, `main`, GitHub Pages, Worker 운영 배포, 운영 Supabase는 변경하지 않았습니다.
+- 후속 QA: Turnstile을 사용자가 직접 재확인한 뒤 후기 수정과 합성 사진 미리보기·업로드·삭제를 진행합니다. 영구 삭제가 필요한 QA 게시물은 매번 정확한 대상을 확인받은 뒤 처리합니다.
 
 관리자 설정 경로는 `admin_members`에 등록된 계정만 사용할 수 있습니다. 관리자 등록·해제 API는 권한 상승을 막기 위해 제공하지 않으며 파일럿 DB에서 별도 통제 절차로 관리해야 합니다. 전송량 경고·중단 수치는 운영 기준값이며 Worker가 계정 전체의 실제 전송량을 측정한다는 의미는 아닙니다.
