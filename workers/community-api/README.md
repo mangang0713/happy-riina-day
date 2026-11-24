@@ -41,7 +41,7 @@ Docker 데이터는 `community-postgres-data` 로컬 볼륨에 남습니다. `np
 - `POST /api/auth/delete-user`: Better Auth의 최근 로그인 확인(기본 24시간 이내)을 거쳐 계정을 삭제합니다. 삭제 전 방명록·후기는 `익명 사용자`로 보존하고, 좋아요·작성자 이의제기·계정 소유 사진·진행 중 사진 예약을 지우며 저장량을 정산합니다. Better Auth가 소셜 계정·세션·프로필·관리자 권한을 제거하고, 신고 기록은 신고자 계정 연결을 끊어 보존합니다.
 - `migrations/0001_better_auth.sql`~`0003_media_upload_reservations.sql`: 로컬 파일럿용 PostgreSQL 스키마 및 업로드 예약 필드
 
-신고·관리·이의제기·7일 만료 정리·계정 삭제까지 로컬 Worker 파일럿에 구현되어 있습니다. Worker 모드에서 로컬 Google OAuth 로그인을 확인했으며 X·Kakao 실제 로그인과 실제 Turnstile 검증은 미완료입니다. Neon Hyperdrive·Cloudflare R2 연결과 기존 사용자·콘텐츠 이전도 하지 않았습니다. GitHub Pages 공개 화면과 Supabase 운영 데이터는 변경하지 않았습니다.
+신고·관리·이의제기·7일 만료 정리·계정 삭제까지 로컬 Worker 파일럿에 구현되어 있습니다. Worker 모드에서 Google OAuth 로그인을 확인했고, 사용자가 X·Kakao 로컬 로그인을 완료했다고 확인했습니다. 방명록·후기 쓰기 요청은 서버의 Turnstile Siteverify를 통과해야 저장됩니다. Neon Hyperdrive·Cloudflare R2 연결과 기존 사용자·콘텐츠 이전은 하지 않았습니다. GitHub Pages 공개 화면과 Supabase 운영 데이터는 변경하지 않았습니다.
 
 업로드는 먼저 PostgreSQL 트랜잭션으로 계정·전체 사용량을 잠그고 10분간 용량을 예약합니다. 파일 저장 또는 DB 확정에 실패하면 R2 객체와 예약을 정리하고, 다음 업로드 요청 시 만료된 예약도 제한된 개수씩 청소합니다. R2 파일은 공개 URL로 노출하지 않으며 Worker가 게시물 공개 상태와 신고자별 숨김 여부를 확인한 뒤 전달합니다.
 
@@ -95,7 +95,7 @@ Docker 데이터는 `community-postgres-data` 로컬 볼륨에 남습니다. `np
 - Rancher Desktop을 업데이트·재시작해 로컬 PostgreSQL 컨테이너가 healthy 상태인 것을 확인한 뒤 테스트를 재실행했습니다. 이번에는 DB 통합 테스트를 포함한 36개가 모두 통과했습니다. 통합 테스트별 정리 훅도 오류 없이 완료됐습니다.
 - `npm run worker:build`의 타입 검사와 Wrangler 배포 dry-run이 통과했습니다. 임시 로컬 Worker smoke test에서 `/health`, `/api/health`, `/api/v1/providers`, `/archive`, 일정 상세 경로는 HTTP 200을 반환했습니다. `/api/v1/settings`는 라우팅되어 Worker에 도달했지만 DB가 실행 중이지 않아 `503 DATABASE_UNAVAILABLE`을 반환했습니다.
 - Docker와 PostgreSQL을 다시 시작한 뒤 동일한 smoke test를 실행했습니다. `/health`, `/api/health`, `/api/v1/providers`, `/api/v1/settings`가 모두 HTTP 200을 반환했고, 공개 설정에는 커뮤니티 작성·업로드·사진 보기 토글만 포함됨을 확인했습니다. 로컬 Worker 프로세스는 확인 후 종료했습니다.
-- 별도 로컬 브라우저 QA에서는 Google OAuth 로그인 복귀와 로그인 세션, 방명록·후기 작성 흐름을 확인했습니다. X·Kakao 로그인은 아직 실제 callback까지 확인하지 않았고, Turnstile 위젯은 화면에 나타나지 않아 Siteverify 성공을 확인하지 못했습니다.
+- 별도 로컬 브라우저 QA에서는 Google OAuth 로그인 복귀와 로그인 세션, 방명록·후기 작성 흐름을 확인했습니다. 사용자는 X·Kakao 로그인이 완료됐다고 확인했습니다. Turnstile 위젯은 `appearance: 'interaction-only'`로 렌더링되어 보통은 화면에 나타나지 않고, Cloudflare가 방문자 상호작용을 요구할 때 나타납니다. Worker는 토큰 누락·무효 시 쓰기를 거절하고 서버에서 Siteverify와 hostname을 확인합니다. 따라서 Worker 모드에서 QA 글·후기가 실제 저장된 것은 유효 토큰이 통과했다는 근거로 판단합니다. 무효 토큰의 실제 브라우저 재현은 별도 확인하지 않았고, 실패 응답은 모의 응답 테스트로 검증했습니다.
 - GitHub Pages와 Supabase 운영 서비스에는 배포하지 않았고, DB 마이그레이션·운영 사용자 데이터 변경도 없습니다. 기존 Worker PostgreSQL 볼륨과 컨테이너는 로컬에서 healthy 상태로 유지되어 있습니다.
 
 관리자 설정 경로는 `admin_members`에 등록된 계정만 사용할 수 있습니다. 관리자 등록·해제 API는 권한 상승을 막기 위해 제공하지 않으며 파일럿 DB에서 별도 통제 절차로 관리해야 합니다. 전송량 경고·중단 수치는 운영 기준값이며 Worker가 계정 전체의 실제 전송량을 측정한다는 의미는 아닙니다.

@@ -200,7 +200,7 @@ Supabase 프로젝트에 DB 마이그레이션과 `community-api` Edge Function�
 
 ### 자체 백엔드 학습 파일럿
 
-Supabase 의존도를 줄이는 방법을 학습하기 위해 `workers/community-api/`에 Hono·Cloudflare Workers API와 Better Auth, PostgreSQL 기반 로컬 파일럿을 별도로 구성했습니다. 일반 GitHub Pages 빌드와 공개 운영은 계속 Supabase를 사용하고, `npm run worker:dev`로 실행하는 Worker 빌드에서만 Better Auth와 Worker 커뮤니티 API를 화면에 연결합니다. 2026-11-02 로컬 PostgreSQL 통합 검증에서는 36개 테스트가 통과했습니다. 로컬 브라우저에서 Google OAuth 로그인과 방명록·후기 흐름을 확인했으며, X·Kakao 실제 로그인과 Cloudflare Turnstile 검증은 아직 확인하지 않았습니다. 2026-11-24에는 Worker 경로 라우팅 smoke 검증과 배포 dry-run을 통과했습니다. Docker 재시작 전 3개 DB 테스트가 건너뛰어졌으나, 재시작 후 로컬 PostgreSQL에 연결해 Worker 테스트 36개 전체가 통과했습니다. 이어서 health·provider·공개 설정 API도 200을 반환하는 것을 확인했습니다. 파일럿은 Neon·실제 R2·기존 데이터에 연결하거나 원격 배포하지 않았습니다.
+Supabase 의존도를 줄이는 방법을 학습하기 위해 `workers/community-api/`에 Hono·Cloudflare Workers API와 Better Auth, PostgreSQL 기반 로컬 파일럿을 별도로 구성했습니다. 일반 GitHub Pages 빌드와 공개 운영은 계속 Supabase를 사용하고, `npm run worker:dev`로 실행하는 Worker 빌드에서만 Better Auth와 Worker 커뮤니티 API를 화면에 연결합니다. 2026-11-02 로컬 PostgreSQL 통합 검증에서는 36개 테스트가 통과했습니다. 로컬 브라우저에서 Google OAuth 로그인과 방명록·후기 저장을 확인했고, 사용자가 X·Kakao 로그인 완료도 확인했습니다. Turnstile은 `interaction-only` 표시 모드라 추가 상호작용이 필요하지 않으면 화면에 보이지 않는 것이 정상입니다. Worker 쓰기 요청은 서버에서 Siteverify를 통과해야 저장되므로, Worker 모드에서 글과 후기가 저장된 QA 결과로 유효 토큰 검증을 확인한 것으로 판단합니다. 2026-11-24에는 Worker 경로 라우팅 smoke 검증과 배포 dry-run을 통과했고 Docker 재시작 후 로컬 PostgreSQL 테스트 36개 전체가 통과했습니다. 파일럿은 Neon·실제 R2·기존 데이터에 연결하거나 원격 배포하지 않았습니다.
 
 로컬 DB와 Worker 실행 방법, API·보안 경계 및 미완료 항목은 [Worker 파일럿 안내](workers/community-api/README.md)와 [백엔드 이전 현황 및 파일럿 기록](docs/backend-migration/current-state-and-pilot.md)을 참고하세요.
 
