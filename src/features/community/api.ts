@@ -97,6 +97,35 @@ export class GuestbookPhotoUploadError extends CommunityRequestError {
   }
 }
 
+/** 후기 본문은 저장됐지만 사진 요청 일부가 실패한 결과를 폼에 전달합니다. */
+export class ScheduleReviewPhotoUploadError extends CommunityRequestError {
+  readonly reviewId: string;
+  readonly uploadedPhotoCount: number;
+  readonly totalPhotoCount: number;
+
+  constructor(
+    reviewId: string,
+    uploadedPhotoCount: number,
+    totalPhotoCount: number,
+    error: unknown,
+  ) {
+    const details = getCommunityErrorDetails(error);
+    super(
+      details.code,
+      details.message,
+      error instanceof CommunityRequestError || error instanceof WorkerApiError
+        ? error.status
+        : undefined,
+    );
+    this.name = 'ScheduleReviewPhotoUploadError';
+    this.reviewId = reviewId;
+    this.uploadedPhotoCount = uploadedPhotoCount;
+    this.totalPhotoCount = totalPhotoCount;
+  }
+}
+
+type FreshTurnstileToken = () => Promise<string>;
+
 /** 화면이 서버 오류를 사용자에게 설명할 수 있도록 공통 오류 정보를 뽑습니다. */
 export function getCommunityErrorDetails(error: unknown) {
   if (error instanceof CommunityRequestError) {
@@ -313,59 +342,116 @@ export async function getScheduleReactions(
   };
 }
 
-/** 방명록 글을 생성·수정하고 선택된 사진을 각 파일별로 업로드합니다. */
-export async function saveGuestbookPost(
-  body: string,
-  media: File[],
-  postId?: string,
-  turnstileToken?: string,
+/** 사진 전송마다 새 토큰을 받아 Turnstile의 일회성 검증을 지킵니다. */
+async function uploadMediaWithFreshToken(
+  file: File,
+  parentType: 'guestbook' | 'review',
+  parentId: string,
+  requestFreshToken: FreshTurnstileToken,
 ) {
-  const createdPost = !postId;
-  if (isWorkerBackend) {
-    const result = postId
-      ? await editWorkerGuestbookPost(postId, body, turnstileToken ?? '')
-      : await createWorkerGuestbookPost(body, turnstileToken ?? '');
-    let uploadedPhotoCount = 0;
-    for (const file of media) {
-      try {
-        const prepared = await prepareCommunityImage(file);
-        await uploadWorkerCommunityMedia(
-          prepared,
-          'guestbook',
-          result.id,
-          turnstileToken ?? '',
-        );
-        uploadedPhotoCount += 1;
-      } catch (error) {
-        throw new GuestbookPhotoUploadError(
-          result.id,
-          createdPost,
-          uploadedPhotoCount,
-          media.length,
-          error,
-        );
-      }
-    }
-    return result;
+  // 압축이 끝난 뒤 토큰을 발급받아 전송 중 만료될 가능성을 줄입니다.
+  let prepared: File;
+  try {
+    prepared = await prepareCommunityImage(file);
+  } catch (error) {
+    throw new CommunityRequestError(
+      'IMAGE_PREPARATION_FAILED',
+      error instanceof Error
+        ? error.message
+        : '사진을 업로드용으로 준비하지 못했습니다.',
+    );
   }
-  const result = await invoke<{ id: string }>(
-    postId ? 'edit-guestbook' : 'create-guestbook',
-    { postId, body, turnstileToken },
-  );
+  const turnstileToken = await requestFreshToken();
+
+  if (isWorkerBackend) {
+    await uploadWorkerCommunityMedia(
+      prepared,
+      parentType,
+      parentId,
+      turnstileToken,
+    );
+    return;
+  }
+
+  await uploadCommunityImage(prepared, parentType, parentId, turnstileToken);
+}
+
+/** 기존 글에 남은 사진만 연결하며 본문을 다시 저장하지 않습니다. */
+export async function resumeGuestbookPhotoUploads(
+  media: File[],
+  postId: string,
+  requestFreshToken: FreshTurnstileToken,
+) {
+  await uploadGuestbookPhotos(media, postId, false, requestFreshToken);
+  return { id: postId };
+}
+
+/** 방명록 글에 선택된 사진을 각기 다른 일회성 토큰으로 업로드합니다. */
+async function uploadGuestbookPhotos(
+  media: File[],
+  postId: string,
+  createdPost: boolean,
+  requestFreshToken: FreshTurnstileToken,
+) {
   let uploadedPhotoCount = 0;
   for (const file of media) {
     try {
-      await uploadCommunityImage(file, 'guestbook', result.id, turnstileToken);
+      await uploadMediaWithFreshToken(
+        file,
+        'guestbook',
+        postId,
+        requestFreshToken,
+      );
       uploadedPhotoCount += 1;
     } catch (error) {
       throw new GuestbookPhotoUploadError(
-        result.id,
+        postId,
         createdPost,
         uploadedPhotoCount,
         media.length,
         error,
       );
     }
+  }
+}
+
+/** 방명록 글을 저장한 뒤 선택된 사진을 새 토큰으로 각각 업로드합니다. */
+export async function saveGuestbookPost(
+  body: string,
+  media: File[],
+  postId?: string,
+  turnstileToken?: string,
+  requestFreshToken?: FreshTurnstileToken,
+) {
+  const createdPost = !postId;
+  const result = isWorkerBackend
+    ? postId
+      ? await editWorkerGuestbookPost(postId, body, turnstileToken ?? '')
+      : await createWorkerGuestbookPost(body, turnstileToken ?? '')
+    : await invoke<{ id: string }>(
+        postId ? 'edit-guestbook' : 'create-guestbook',
+        { postId, body, turnstileToken },
+      );
+
+  if (media.length > 0) {
+    if (!requestFreshToken) {
+      throw new GuestbookPhotoUploadError(
+        result.id,
+        createdPost,
+        0,
+        media.length,
+        new CommunityRequestError(
+          'BOT_CHECK_REQUIRED',
+          '사진을 올리려면 새 봇 확인이 필요합니다.',
+        ),
+      );
+    }
+    await uploadGuestbookPhotos(
+      media,
+      result.id,
+      createdPost,
+      requestFreshToken,
+    );
   }
   return result;
 }
@@ -384,9 +470,10 @@ export async function saveScheduleReview(
   media: File[],
   reviewId?: string,
   turnstileToken?: string,
+  requestFreshToken?: FreshTurnstileToken,
 ) {
-  if (isWorkerBackend) {
-    const result = reviewId
+  const result = isWorkerBackend
+    ? reviewId
       ? await editWorkerScheduleReview(
           scheduleId,
           reviewId,
@@ -399,24 +486,47 @@ export async function saveScheduleReview(
           body,
           rating,
           turnstileToken ?? '',
-        );
-    for (const file of media) {
-      const prepared = await prepareCommunityImage(file);
-      await uploadWorkerCommunityMedia(
-        prepared,
-        'review',
+        )
+    : await invoke<{ id: string }>(reviewId ? 'edit-review' : 'create-review', {
+        reviewId,
+        scheduleId,
+        body,
+        rating,
+        turnstileToken,
+      });
+
+  if (media.length > 0) {
+    if (!requestFreshToken) {
+      throw new ScheduleReviewPhotoUploadError(
         result.id,
-        turnstileToken ?? '',
+        0,
+        media.length,
+        new CommunityRequestError(
+          'BOT_CHECK_REQUIRED',
+          '사진을 올리려면 새 봇 확인이 필요합니다.',
+        ),
       );
     }
-    return result;
-  }
-  const result = await invoke<{ id: string }>(
-    reviewId ? 'edit-review' : 'create-review',
-    { reviewId, scheduleId, body, rating, turnstileToken },
-  );
-  for (const file of media) {
-    await uploadCommunityImage(file, 'review', result.id, turnstileToken);
+
+    let uploadedPhotoCount = 0;
+    for (const file of media) {
+      try {
+        await uploadMediaWithFreshToken(
+          file,
+          'review',
+          result.id,
+          requestFreshToken,
+        );
+        uploadedPhotoCount += 1;
+      } catch (error) {
+        throw new ScheduleReviewPhotoUploadError(
+          result.id,
+          uploadedPhotoCount,
+          media.length,
+          error,
+        );
+      }
+    }
   }
   return result;
 }
@@ -443,16 +553,7 @@ async function uploadCommunityImage(
   formData.set('parentType', parentType);
   formData.set('parentId', parentId);
   if (turnstileToken) formData.set('turnstileToken', turnstileToken);
-  try {
-    formData.set('file', await prepareCommunityImage(file));
-  } catch (error) {
-    throw new CommunityRequestError(
-      'IMAGE_PREPARATION_FAILED',
-      error instanceof Error
-        ? error.message
-        : '사진을 업로드용으로 준비하지 못했습니다.',
-    );
-  }
+  formData.set('file', file);
 
   let response: Response;
   try {

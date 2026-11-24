@@ -26,6 +26,7 @@ import {
   getScheduleReviews,
   hideCommunityContent,
   reportCommunityContent,
+  ScheduleReviewPhotoUploadError,
   saveScheduleReview,
   toggleScheduleLike,
 } from '../features/community/api';
@@ -40,6 +41,7 @@ import type {
 import CommunityReportDialog from '../components/community/CommunityReportDialog';
 import ModerationReasonDialog from '../components/community/ModerationReasonDialog';
 import TurnstileWidget from '../components/security/TurnstileWidget';
+import { useTurnstileToken } from '../components/security/useTurnstileToken';
 import './CommunityPages.css';
 
 const MAX_REVIEW_IMAGES = 3;
@@ -91,8 +93,13 @@ function SchedulePage() {
   const [message, setMessage] = useState('');
   const messageTimeoutRef = useRef<number | null>(null);
   const [busy, setBusy] = useState(false);
-  const [turnstileToken, setTurnstileToken] = useState('');
-  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+  const {
+    token: turnstileToken,
+    resetKey: turnstileResetKey,
+    onToken: setTurnstileToken,
+    requestFreshToken,
+    reset: resetTurnstile,
+  } = useTurnstileToken();
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [reportTarget, setReportTarget] = useState<ScheduleReview | null>(null);
   const [reportingId, setReportingId] = useState<string>();
@@ -285,19 +292,27 @@ function SchedulePage() {
         files,
         editingId,
         turnstileToken,
+        requestFreshToken,
       );
       setBody('');
       setBodyError('');
       replaceSelectedPhotos([]);
       setEditingId(undefined);
-      setTurnstileResetKey((key) => key + 1);
-      setTurnstileToken('');
+      resetTurnstile();
       setTermsAccepted(false);
       setConsentError('');
       await refresh();
       setMessage('후기를 저장했습니다.');
     } catch (error) {
       setSubmissionError(getCommunityErrorDetails(error));
+      resetTurnstile();
+      if (error instanceof ScheduleReviewPhotoUploadError) {
+        setEditingId(error.reviewId);
+        replaceSelectedPhotos(files.slice(error.uploadedPhotoCount));
+        setMessage(
+          `후기는 저장됐지만 사진 ${error.uploadedPhotoCount}/${error.totalPhotoCount}장이 연결되지 않았습니다. 같은 후기를 다시 저장해 사진 업로드를 이어갈 수 있습니다.`,
+        );
+      }
       await refresh();
     } finally {
       setBusy(false);

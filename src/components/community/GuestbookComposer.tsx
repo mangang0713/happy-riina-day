@@ -8,10 +8,12 @@ import {
   acceptCommunityTerms,
   getCommunityErrorDetails,
   GuestbookPhotoUploadError,
+  resumeGuestbookPhotoUploads,
   saveGuestbookPost,
 } from '../../features/community/api';
 import type { GuestbookPost } from '../../features/community/types';
 import TurnstileWidget from '../security/TurnstileWidget';
+import { useTurnstileToken } from '../security/useTurnstileToken';
 
 const MAX_POST_IMAGES = 3;
 
@@ -49,8 +51,13 @@ function GuestbookComposer({
     code: string;
     message: string;
   } | null>(null);
-  const [turnstileToken, setTurnstileToken] = useState('');
-  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+  const {
+    token: turnstileToken,
+    resetKey: turnstileResetKey,
+    onToken: setTurnstileToken,
+    requestFreshToken,
+    reset: resetTurnstile,
+  } = useTurnstileToken();
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [consentError, setConsentError] = useState('');
   const consentCheckboxRef = useRef<HTMLInputElement>(null);
@@ -131,13 +138,26 @@ function GuestbookComposer({
     const continuingUpload = Boolean(resumePostId);
     try {
       await acceptCommunityTerms();
-      await saveGuestbookPost(body.trim(), files, resumePostId, turnstileToken);
+      if (continuingUpload && resumePostId) {
+        await resumeGuestbookPhotoUploads(
+          files,
+          resumePostId,
+          requestFreshToken,
+        );
+      } else {
+        await saveGuestbookPost(
+          body.trim(),
+          files,
+          undefined,
+          turnstileToken,
+          requestFreshToken,
+        );
+      }
       setBody('');
       replaceSelectedPhotos([]);
       setResumePostId(undefined);
       await loadPosts();
-      setTurnstileResetKey((key) => key + 1);
-      setTurnstileToken('');
+      resetTurnstile();
       setTermsAccepted(false);
       onMessage(
         continuingUpload
@@ -167,8 +187,7 @@ function GuestbookComposer({
           setBody('');
           replaceSelectedPhotos([]);
           setResumePostId(undefined);
-          setTurnstileResetKey((key) => key + 1);
-          setTurnstileToken('');
+          resetTurnstile();
           setTermsAccepted(false);
           onMessage(
             `요청 응답은 실패했지만 글과 사진 ${confirmedPhotoCount}장을 남겨진 글에서 확인했습니다.`,
@@ -176,6 +195,7 @@ function GuestbookComposer({
         } else {
           setResumePostId(error.postId);
           replaceSelectedPhotos(files.slice(confirmedPhotoCount));
+          resetTurnstile();
           onMessage(
             refreshedPosts
               ? `글은 저장되었습니다. 사진 ${confirmedPhotoCount}/${error.totalPhotoCount}장이 연결된 것을 확인했습니다. 남은 사진은 이 글을 새로 등록하지 말고 다시 첨부할 수 있습니다.`
@@ -185,6 +205,7 @@ function GuestbookComposer({
         }
       } else {
         setSubmissionError(details);
+        resetTurnstile();
       }
     } finally {
       setBusy(false);

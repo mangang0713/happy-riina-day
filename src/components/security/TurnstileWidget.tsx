@@ -18,6 +18,7 @@ declare global {
           appearance?: 'always' | 'execute' | 'interaction-only';
         },
       ) => string;
+      reset: (widgetId: string) => void;
       remove: (widgetId: string) => void;
     };
   }
@@ -62,18 +63,20 @@ function TurnstileWidget({
   appearance?: 'always' | 'execute' | 'interaction-only';
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const widgetIdRef = useRef<string | undefined>(undefined);
+  const lastResetKeyRef = useRef(resetKey);
   const [error, setError] = useState('');
 
   useEffect(() => {
     const container = containerRef.current;
     if (!siteKey || !container) return;
-    let widgetId: string | undefined;
+    setError('');
     let active = true;
     loadTurnstile()
       .then(() => {
         const turnstile = window.turnstile;
         if (!active || !turnstile || !container) return;
-        widgetId = turnstile.render(container, {
+        widgetIdRef.current = turnstile.render(container, {
           sitekey: siteKey,
           theme: 'light',
           callback: onToken,
@@ -94,10 +97,23 @@ function TurnstileWidget({
       );
     return () => {
       active = false;
-      if (widgetId) window.turnstile?.remove(widgetId);
+      if (widgetIdRef.current) {
+        window.turnstile?.remove(widgetIdRef.current);
+        widgetIdRef.current = undefined;
+      }
       onToken('');
     };
-  }, [appearance, onToken, resetKey]);
+  }, [appearance, onToken]);
+
+  useEffect(() => {
+    if (lastResetKeyRef.current === resetKey) return;
+    lastResetKeyRef.current = resetKey;
+    const widgetId = widgetIdRef.current;
+    if (!widgetId) return;
+
+    setError('');
+    window.turnstile?.reset(widgetId);
+  }, [resetKey]);
 
   if (!siteKey) {
     return (
