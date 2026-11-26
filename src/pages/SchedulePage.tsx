@@ -41,6 +41,7 @@ import type {
 import CommunityReportDialog from '../components/community/CommunityReportDialog';
 import ModerationReasonDialog from '../components/community/ModerationReasonDialog';
 import TurnstileWidget from '../components/security/TurnstileWidget';
+import OfficialSchedulePhotos from '../components/media/OfficialSchedulePhotos';
 import { useTurnstileToken } from '../components/security/useTurnstileToken';
 import './CommunityPages.css';
 
@@ -528,6 +529,7 @@ function SchedulePage() {
             )}
           </section>
         )}
+      <OfficialSchedulePhotos media={schedule.media} />
       <div className="schedule-community-actions">
         <button
           className={`like-button${liked ? ' is-liked' : ''}`}

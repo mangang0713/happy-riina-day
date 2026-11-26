@@ -13,6 +13,7 @@ import {
 import { songs } from '../../data/songs';
 import type { CountryCode, EventFormat, Schedule } from '../../types/archive';
 import ArchiveScheduleFeedback from './ArchiveScheduleFeedback';
+import OfficialSchedulePhotos from '../media/OfficialSchedulePhotos';
 import { renderPhotoGallery } from '../media/photoGallery';
 import { renderXPostEmbeds } from '../media/xPostEmbeds';
 import '../media/XPostEmbeds.css';
@@ -271,6 +272,7 @@ function ArchiveExplorerPanel({ onClose }: ArchiveExplorerPanelProps) {
                 )}
               </dl>
             )}
+            <OfficialSchedulePhotos media={selectedSchedule.media} />
             <ArchiveScheduleFeedback
               key={selectedSchedule.id}
               scheduleId={selectedSchedule.id}

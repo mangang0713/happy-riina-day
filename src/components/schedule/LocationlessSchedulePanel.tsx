@@ -6,6 +6,7 @@ import { useEffect, useRef } from 'react';
 import { songs } from '../../data/songs';
 import { getSongPerformanceNumber } from '../../data/songStats';
 import type { Schedule } from '../../types/archive';
+import OfficialSchedulePhotos from '../media/OfficialSchedulePhotos';
 import { renderPhotoGallery } from '../media/photoGallery';
 import { renderXPostEmbeds } from '../media/xPostEmbeds';
 import '../media/XPostEmbeds.css';
@@ -200,6 +201,7 @@ function LocationlessSchedulePanel({
               </section>
             )}
 
+          <OfficialSchedulePhotos media={selected.media} />
           {selectedPhotos?.length ? (
             <div className="locationless-gallery" ref={photoRef} />
           ) : null}

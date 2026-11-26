@@ -116,9 +116,33 @@ export function renderPhotoGallery(
     dialog.addEventListener(
       'keydown',
       (event) => {
-        if (event.key === 'Escape') closeDialog();
-        if (event.key === 'ArrowLeft') showPhoto(activeIndex - 1);
-        if (event.key === 'ArrowRight') showPhoto(activeIndex + 1);
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          closeDialog();
+          return;
+        }
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+          event.preventDefault();
+          showPhoto(activeIndex + (event.key === 'ArrowLeft' ? -1 : 1));
+        }
+        // 확대 중에는 키보드가 뒤쪽 지도·행사 패널로 빠지지 않게 합니다.
+        if (event.key === 'Tab') {
+          const controls = [close, previous, next];
+          const activeControl = controls.indexOf(
+            document.activeElement as HTMLButtonElement,
+          );
+          if (event.shiftKey && activeControl <= 0) {
+            event.preventDefault();
+            next.focus();
+          } else if (
+            !event.shiftKey &&
+            (activeControl === controls.length - 1 || activeControl === -1)
+          ) {
+            event.preventDefault();
+            close.focus();
+          }
+        }
       },
       { signal },
     );
