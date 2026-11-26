@@ -25,8 +25,8 @@ export type ScheduleMedia = {
   photos?: string[];
   youtube?: string[];
   xPosts?: string[];
-  officialGroupPhotos?: string[]; // public/media/official/ 아래에 보관하는 로컬 이미지 경로
-  officialIndividualPhotos?: string[]; // public/media/official/ 아래에 보관하는 로컬 이미지 경로
+  officialGroupPhotos?: string[]; // 확인된 HTTPS 이미지 주소 또는 public/media/official/ 로컬 경로
+  officialIndividualPhotos?: string[]; // 확인된 HTTPS 이미지 주소 또는 public/media/official/ 로컬 경로
   officialReels?: string[]; // 공식 Instagram 게시물 링크
 };
 
@@ -50,7 +50,7 @@ export type Schedule = {
   date: string; // YYYY-MM-DD
   startTime?: `${Hour}:${Minute}`; // HH:mm (00:00~23:59), 미확인일 때 생략
   orderInDay?: number; // 같은 날짜의 행사 순서 (1부터), 전체 순번 아님
-  media?: ScheduleMedia; // X 미디어는 외부 연결, 공식 사진은 저장소의 정적 파일로 관리
+  media?: ScheduleMedia; // 미디어는 외부 주소와 선택적으로 보관한 공식 사진의 정적 경로를 연결
 } & ( // 배열 순서는 공연 순서입니다. 곡별 누적 공연 순번은 저장하지 않습니다.
   | { setlistStatus: 'known'; setlist: [Song['id'], ...Song['id'][]] }
   | { setlistStatus: 'partial'; setlist: [Song['id'], ...Song['id'][]] } // 일부 곡과 확인된 순서만 기록
